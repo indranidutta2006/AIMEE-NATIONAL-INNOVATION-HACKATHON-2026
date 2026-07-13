@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 // Default global watchlist
 const DEFAULT_WATCHLIST = ['AAPL', 'TSLA', 'NVDA', 'AMZN'];
@@ -68,6 +68,34 @@ const toTimeInputValue = (date) => {
 const getCurrentDateValue = () => toDateInputValue(new Date());
 const getCurrentTimeValue = () => toTimeInputValue(new Date());
 
+const isValidTimeValue = (value) => {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return false;
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+};
+
+const normalizeTimeValue = (value) => {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+  if (!digits) return '00:00';
+
+  if (digits.length <= 2) {
+    const hours = String(Math.min(23, Math.max(0, Number.parseInt(digits || '0', 10) || 0))).padStart(2, '0');
+    return `${hours}:00`;
+  }
+
+  const hours = String(Math.min(23, Math.max(0, Number.parseInt(digits.slice(0, 2), 10) || 0))).padStart(2, '0');
+  const minutes = String(Math.min(59, Math.max(0, Number.parseInt(digits.slice(2, 4), 10) || 0))).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+const getAdjustedTimeValue = (value, field, direction) => {
+  const [hours, minutes] = value.split(':').map(Number);
+  const next = new Date(2000, 0, 1, hours, minutes);
+  next.setMinutes(next.getMinutes() + (field === 'minute' ? direction * 1 : 0));
+  next.setHours(next.getHours() + (field === 'hour' ? direction * 1 : 0));
+  return toTimeInputValue(next);
+};
+
 export default function App() {
   // --- STATE MANAGEMENT ---
   const [cash, setCash] = useState(10000.00);
@@ -94,10 +122,13 @@ export default function App() {
   const [selectedTime, setSelectedTime] = useState(() => getCurrentTimeValue());
   const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getCurrentDateValue());
   const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => getCurrentTimeValue());
+  const [timeInputDraft, setTimeInputDraft] = useState(() => getCurrentTimeValue());
+  const [timeInputError, setTimeInputError] = useState('');
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState({ closed: false, message: '' });
   const [lastExtractedAt, setLastExtractedAt] = useState(null);
+  const playbackClockRef = useRef(new Date());
 
   const formatSelectedDate = (value) => {
     if (!value) return 'No date selected';
@@ -273,7 +304,7 @@ export default function App() {
       return;
     }
 
-    if (isMarketClosedForDate(selectedDateValue)) {
+    if (isMarketClosedForDate(selectedDateValue, selectedTimeValue)) {
       setMarketStatus({ closed: true, message: 'Market Closed.' });
       setMarketStocks((prevStocks) => {
         const nextStocks = { ...prevStocks };
@@ -347,6 +378,25 @@ export default function App() {
     return () => clearInterval(activeInterval);
   }, [mounted, fetchMarketData, apiMode, runSimulationTick, isManualSim, rateLimitTimer]);
 
+  useEffect(() => {
+    if (!mounted) return;
+
+    const progressionInterval = setInterval(() => {
+      const nextTick = new Date(playbackClockRef.current.getTime() + 60_000);
+      playbackClockRef.current = nextTick;
+      const nextDateValue = toDateInputValue(nextTick);
+      const nextTimeValue = toTimeInputValue(nextTick);
+      setSelectedDate(nextDateValue);
+      setSelectedTime(nextTimeValue);
+      setCalendarSelectionDate(nextDateValue);
+      setCalendarSelectionTime(nextTimeValue);
+      setTimeInputDraft(nextTimeValue);
+      fetchMarketData(null, true, nextDateValue, nextTimeValue);
+    }, 60000);
+
+    return () => clearInterval(progressionInterval);
+  }, [mounted, fetchMarketData]);
+
   // Timers countdown
   useEffect(() => {
     const interval = setInterval(() => {
@@ -364,10 +414,18 @@ export default function App() {
   const confirmSelectedDate = () => {
     const nextDate = calendarSelectionDate || getCurrentDateValue();
     const nextTime = calendarSelectionTime || getCurrentTimeValue();
+    if (!isValidTimeValue(nextTime)) {
+      setTimeInputError('Please use a valid time between 00:00 and 23:59.');
+      return;
+    }
+
     setSelectedDate(nextDate);
     setSelectedTime(nextTime);
     setCalendarSelectionDate(nextDate);
     setCalendarSelectionTime(nextTime);
+    setTimeInputDraft(nextTime);
+    setTimeInputError('');
+    playbackClockRef.current = new Date(`${nextDate}T${nextTime}`);
     setCalendarViewDate(new Date(`${nextDate}T12:00:00`));
     fetchMarketData(null, true, nextDate, nextTime);
   };
@@ -377,9 +435,12 @@ export default function App() {
     const now = getCurrentTimeValue();
     setCalendarSelectionDate(today);
     setCalendarSelectionTime(now);
+    setTimeInputDraft(now);
+    setTimeInputError('');
     setCalendarViewDate(new Date());
     setSelectedDate(today);
     setSelectedTime(now);
+    playbackClockRef.current = new Date(`${today}T${now}`);
     fetchMarketData(null, true, today, now);
   };
 
@@ -388,6 +449,36 @@ export default function App() {
     if (refreshCooldown > 0) return;
     setRefreshCooldown(12);
     fetchMarketData(null, true);
+  };
+
+  const handleTimeDraftChange = (event) => {
+    const rawValue = event.target.value;
+    const digitsOnly = String(rawValue || '').replace(/\D/g, '').slice(0, 4);
+    const nextDraft = digitsOnly.length <= 2 ? digitsOnly : `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2, 4)}`;
+    const candidate = normalizeTimeValue(nextDraft);
+
+    if (!nextDraft) {
+      setTimeInputDraft('');
+      setTimeInputError('');
+      return;
+    }
+
+    if (isValidTimeValue(candidate)) {
+      setCalendarSelectionTime(candidate);
+      setTimeInputDraft(candidate);
+      setTimeInputError('');
+      return;
+    }
+
+    setTimeInputDraft(nextDraft);
+    setTimeInputError('Please use a valid time between 00:00 and 23:59.');
+  };
+
+  const updateTimeField = (field, direction) => {
+    const nextTime = getAdjustedTimeValue(calendarSelectionTime || getCurrentTimeValue(), field, direction);
+    setCalendarSelectionTime(nextTime);
+    setTimeInputDraft(nextTime);
+    setTimeInputError('');
   };
 
   // Dynamic global search and lookup
@@ -599,12 +690,93 @@ export default function App() {
                   <div className="space-y-3">
                     <label className="flex flex-col gap-1 text-sm text-slate-300">
                       <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">Extraction Time</span>
-                      <input
-                        type="time"
-                        value={calendarSelectionTime}
-                        onChange={(event) => setCalendarSelectionTime(event.target.value)}
-                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
-                      />
+                      <div className="rounded-lg border border-slate-700 bg-slate-950 p-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-2">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Hours</div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateTimeField('hour', -1)}
+                                className="h-8 w-8 rounded-full border border-slate-700 text-sm text-slate-200"
+                              >
+                                −
+                              </button>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={timeInputDraft.split(':')[0] || '00'}
+                                onChange={(event) => {
+                                  const hours = String(event.target.value || '').replace(/\D/g, '').slice(0, 2);
+                                  const nextValue = `${hours.padStart(2, '0')}:${(timeInputDraft.split(':')[1] || '00')}`;
+                                  if (isValidTimeValue(nextValue)) {
+                                    setCalendarSelectionTime(nextValue);
+                                    setTimeInputDraft(nextValue);
+                                    setTimeInputError('');
+                                  } else {
+                                    setTimeInputDraft(nextValue);
+                                    setTimeInputError('Please use a valid time between 00:00 and 23:59.');
+                                  }
+                                }}
+                                className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => updateTimeField('hour', 1)}
+                                className="h-8 w-8 rounded-full border border-slate-700 text-sm text-slate-200"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-2">
+                            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Minutes</div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateTimeField('minute', -1)}
+                                className="h-8 w-8 rounded-full border border-slate-700 text-sm text-slate-200"
+                              >
+                                −
+                              </button>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={timeInputDraft.split(':')[1] || '00'}
+                                onChange={(event) => {
+                                  const minutes = String(event.target.value || '').replace(/\D/g, '').slice(0, 2);
+                                  const nextValue = `${(timeInputDraft.split(':')[0] || '00')}:${minutes.padStart(2, '0')}`;
+                                  if (isValidTimeValue(nextValue)) {
+                                    setCalendarSelectionTime(nextValue);
+                                    setTimeInputDraft(nextValue);
+                                    setTimeInputError('');
+                                  } else {
+                                    setTimeInputDraft(nextValue);
+                                    setTimeInputError('Please use a valid time between 00:00 and 23:59.');
+                                  }
+                                }}
+                                className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => updateTimeField('minute', 1)}
+                                className="h-8 w-8 rounded-full border border-slate-700 text-sm text-slate-200"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={timeInputDraft}
+                          onChange={handleTimeDraftChange}
+                          placeholder="HH:MM"
+                          className="mt-2 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-cyan-500 focus:outline-none"
+                        />
+                        {timeInputError ? <p className="mt-2 text-xs text-rose-400">{timeInputError}</p> : null}
+                      </div>
                     </label>
 
                     <div className="flex items-center justify-between">
