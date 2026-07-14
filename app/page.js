@@ -665,84 +665,92 @@ export default function App() {
                   </div>
 
                   {isCalendarOpen && (
-    <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
-      {/* Month & Year Navigation Control Bar */}
-      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-        <button 
-          type="button"
-          onClick={() => setCalendarViewDate(new Date(calendarViewDate.setMonth(calendarViewDate.getMonth() - 1)))}
-          className="text-slate-400 hover:text-white p-1 font-mono transition"
-        >
-          &lt;
-        </button>
-        <span className="text-xs font-semibold tracking-wide text-slate-200 uppercase">
-          {calendarViewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-        </span>
-        <button 
-          type="button"
-          onClick={() => setCalendarViewDate(new Date(calendarViewDate.setMonth(calendarViewDate.getMonth() + 1)))}
-          className="text-slate-400 hover:text-white p-1 font-mono transition"
-        >
-          &gt;
-        </button>
-      </div>
+  <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
+    {/* Month & Year Navigation Control Bar */}
+    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+      <button 
+        type="button"
+        onClick={() => {
+          // Set to the 1st of the month before subtracting to prevent running into varying month-lengths
+          const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() - 1, 1);
+          setCalendarViewDate(target);
+        }}
+        className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
+      >
+        &lt;
+      </button>
+      <span className="text-xs font-semibold tracking-wide text-slate-200 uppercase select-none">
+        {calendarViewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+      </span>
+      <button 
+        type="button"
+        onClick={() => {
+          const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + 1, 1);
+          setCalendarViewDate(target);
+        }}
+        className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
+      >
+        &gt;
+      </button>
+    </div>
 
-      {/* Day Names Grid Header Array */}
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase">
-        <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
-      </div>
+    {/* Day Names Grid Header Array */}
+    <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase select-none">
+      <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+    </div>
 
-      {/* Dynamic Days Grid Blocks */}
-      <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
-        {calendarDays.map((day, i) => {
-          if (!day) {
-            return <div key={`empty-${i}`} className="p-1.5 opacity-0 select-none">--</div>;
-          }
-          
-          const dateString = toNYDateInputValue(day);
-          const isSelected = dateString === calendarSelectionDate;
-          const isToday = toNYDateInputValue(new Date()) === dateString;
+    {/* Dynamic Days Grid Blocks */}
+    <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
+      {calendarDays.map((day, i) => {
+        if (!day) {
+          return <div key={`empty-${i}`} className="p-1.5 opacity-0 select-none">--</div>;
+        }
+        
+        // Formatter-safe date matching directly across ISO parameters
+        const dateString = day.toISOString().split('T')[0];
+        const isSelected = dateString === calendarSelectionDate;
+        const isToday = new Date().toISOString().split('T')[0] === dateString;
 
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => handleCalendarDateSelect(dateString)}
-              className={`p-1.5 rounded-md font-medium transition duration-150 text-center ${
-                isSelected
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20'
-                  : isToday
-                  ? 'border border-cyan-500/50 bg-cyan-500/5 text-cyan-400 hover:bg-slate-800'
-                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
-              }`}
-            >
-              {day.getDate()}
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => handleCalendarDateSelect(dateString)}
+            className={`p-1.5 rounded-md font-medium transition duration-150 text-center ${
+              isSelected
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20'
+                : isToday
+                ? 'border border-cyan-500/50 bg-cyan-500/5 text-cyan-400 hover:bg-slate-800'
+                : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
+            }`}
+          >
+            {day.getUTCDate()}
+          </button>
+        );
+      })}
+    </div>
 
-      {/* Compact Time Increment Sliders Section */}
-      <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
-        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
-          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
-          <div className="flex justify-between items-center mt-1 px-1">
-            <button type="button" onClick={() => updateTimeField('hour', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
-            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[0] || '00'}</span>
-            <button type="button" onClick={() => updateTimeField('hour', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
-          </div>
+    {/* Compact Time Increment Section */}
+    <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
+      <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
+        <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
+        <div className="flex justify-between items-center mt-1 px-1">
+          <button type="button" onClick={() => updateTimeField('hour', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
+          <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[0] || '00'}</span>
+          <button type="button" onClick={() => updateTimeField('hour', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
         </div>
-        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
-          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Minute</span>
-          <div className="flex justify-between items-center mt-1 px-1">
-            <button type="button" onClick={() => updateTimeField('minute', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
-            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[1] || '00'}</span>
-            <button type="button" onClick={() => updateTimeField('minute', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
-          </div>
+      </div>
+      <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
+        <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Minute</span>
+        <div className="flex justify-between items-center mt-1 px-1">
+          <button type="button" onClick={() => updateTimeField('minute', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
+          <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[1] || '00'}</span>
+          <button type="button" onClick={() => updateTimeField('minute', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
         </div>
       </div>
     </div>
-  )}
+  </div>
+)}
                 </div>
               </div>
             </div>
