@@ -539,31 +539,35 @@ export default function App() {
   }, [mounted, fetchMarketData, apiMode, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (refreshCooldown > 0) setRefreshCooldown(prev => prev - 1);
-      if (rateLimitTimer > 0) setRateLimitTimer(prev => prev - 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [refreshCooldown, rateLimitTimer]);
+  if (!mounted) return;
+  
+  if (isMarketClosedForDate(selectedDate, selectedTime)) {
+    setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+    setApiMode('Closed Terminal');
+  } else {
+    setMarketStatus({ closed: false, message: '' });
+    fetchMarketData();
+  }
 
-  const handleCalendarDateSelect = (dateValue) => {
-    setCalendarSelectionDate(dateValue);
-    setCalendarViewDate(new Date(`${dateValue}T12:00:00`));
-  };
-
-  const confirmSelectedDate = () => {
-    const nextDate = calendarSelectionDate;
-    const nextTime = calendarSelectionTime;
-    setSelectedDate(nextDate);
-    setSelectedTime(nextTime);
-    playbackClockRef.current = new Date(`${nextDate}T${nextTime}`);
-    
-    if (!isMarketClosedForDate(nextDate, nextTime)) {
-      setMarketStatus({ closed: false, message: '' });
+  const activeInterval = setInterval(() => {
+    if (isMarketClosedForDate(selectedDate, selectedTime)) {
+      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+      setApiMode('Closed Terminal');
+      return; 
     }
-    fetchMarketData(null, true, nextDate, nextTime);
-  };
 
+    // Live mode: Keep trying to recover the API in the background even if the pipeline fails
+    if (!isManualSim && rateLimitTimer === 0) {
+      fetchMarketData(null, true);
+    } else if (isManualSim) {
+      // Only drift prices if manual simulation is explicitly toggled on
+      runSimulationTickMemoized();
+    }
+  }, 15000);
+
+  return () => clearInterval(activeInterval);
+  // apiMode has been removed from the dependency array so the loop doesn't deadlock
+}, [mounted, fetchMarketData, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
   const updateTimeField = (field, direction) => {
     const nextTime = getAdjustedTimeValue(calendarSelectionTime, field, direction);
     setCalendarSelectionTime(nextTime);
