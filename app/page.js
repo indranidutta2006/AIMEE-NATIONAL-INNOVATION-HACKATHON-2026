@@ -157,15 +157,21 @@ const isValidTimeValue = (value) => {
 const normalizeTimeValue = (value) => {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
   if (!digits) return '00:00';
+  
   if (digits.length <= 2) {
-    const hours = String(Math.min(23, Math.max(0, Number.parseInt(digits || '0', 10) || 0))).padStart(2, '0');
+    const parsedHours = Number.parseInt(digits, 10) || 0;
+    const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
     return `${hours}:00`;
   }
-  const hours = String(Math.min(23, Math.max(0, Number.parseInt(digits.slice(0, 2), 10) || 0))).padStart(2, '0');
-  const minutes = String(Math.min(59, Math.max(0, Number.parseInt(digits.slice(2, 4), 10) || 0))).padStart(2, '0');
+  
+  const parsedHours = Number.parseInt(digits.slice(0, 2), 10) || 0;
+  const parsedMinutes = Number.parseInt(digits.slice(2, 4), 10) || 0;
+  
+  const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
+  const minutes = String(Math.min(59, Math.max(0, parsedMinutes))).padStart(2, '0');
+  
   return `${hours}:${minutes}`;
 };
-
 const getAdjustedTimeValue = (value, field, direction) => {
   const [hours, minutes] = value.split(':').map(Number);
   const next = new Date(2000, 0, 1, hours, minutes);
