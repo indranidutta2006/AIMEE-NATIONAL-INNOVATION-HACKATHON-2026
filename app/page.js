@@ -104,7 +104,6 @@ const getMarketHolidaysForYear = (year) => {
   return holidaySet;
 };
 
-// Clean timezone parsing decoupled from local machine timezone offsets
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
@@ -148,7 +147,6 @@ const toNYTimeInputValue = (date) => {
   return `${hour}:${minute}`;
 };
 
-// Returns a safe fallback date (Latest Monday if today is a weekend) to prevent initial blackouts
 const getInitialOpenDateValue = () => {
   const d = new Date();
   const day = d.getDay();
@@ -192,6 +190,128 @@ const getAdjustedTimeValue = (value, field, direction) => {
   next.setHours(next.getHours() + (field === 'hour' ? direction * 1 : 0));
   return toNYTimeInputValue(next);
 };
+
+// Pure, zero-dependency client chart engine to mock linear time-series paths seamlessly
+function IntradayLineChart({ basePrice, ticker, isPositive }) {
+  const containerRef = useRef(null);
+  const [hoverData, setHoverData] = useState(null);
+  const [chartPoints, setChartPoints] = useState([]);
+
+  // Generate an array of 40 stable linear coordinates representing a 9:30 - 16:00 trading matrix
+  useEffect(() => {
+    let currentPrice = basePrice * 0.99;
+    const items = [];
+    const seed = ticker.charCodeAt(0) + ticker.charCodeAt(ticker.length - 1);
+    
+    // Deterministic random walk sequence generator based on stock ticker identity
+    const pseudoRandom = (index) => {
+      const x = Math.sin(seed + index) * 10000;
+      return x - Math.floor(x);
+    };
+
+    for (let i = 0; i < 40; i++) {
+      const timeHour = Math.floor(9 + (30 + i * 10) / 60);
+      const timeMin = Math.floor((30 + i * 10) % 60);
+      const timeString = `${String(timeHour).padStart(2, '0')}:${String(timeMin).padStart(2, '0')}`;
+      
+      const changePercent = (pseudoRandom(i) * 0.8 - 0.38) / 100;
+      currentPrice = currentPrice * (1 + changePercent);
+      items.push({ time: timeString, val: currentPrice });
+    }
+    setChartPoints(items);
+    setHoverData(null);
+  }, [basePrice, ticker]);
+
+  if (chartPoints.length === 0) return null;
+
+  const minVal = Math.min(...chartPoints.map(p => p.val));
+  const maxVal = Math.max(...chartPoints.map(p => p.val));
+  const marginRange = maxVal - minVal === 0 ? 1 : maxVal - minVal;
+
+  // Chart viewbox boundaries
+  const width = 600;
+  const height = 240;
+
+  // Generate SVG Coordinate String
+  const svgPoints = chartPoints.map((p, idx) => {
+    const x = (idx / (chartPoints.length - 1)) * (width - 40) + 20;
+    const y = height - 20 - ((p.val - minVal) / marginRange) * (height - 40);
+    return `${x},${y}`;
+  });
+
+  const linePath = `M ${svgPoints.join(' L ')}`;
+  const areaPath = `${linePath} L ${svgPoints[svgPoints.length - 1].split(',')[0]},${height - 20} L ${svgPoints[0].split(',')[0]},${height - 20} Z`;
+
+  const handleMouseMove = (e) => {
+    if (!containerRef.current) return;
+    const bounds = containerRef.current.getBoundingClientRect();
+    const touchX = e.clientX - bounds.left - 20;
+    const innerWidth = bounds.width - 40;
+    
+    let index = Math.round((touchX / innerWidth) * (chartPoints.length - 1));
+    index = Math.max(0, Math.min(chartPoints.length - 1, index));
+    
+    if (chartPoints[index]) {
+      const coordPair = svgPoints[index].split(',');
+      setHoverData({
+        time: chartPoints[index].time,
+        price: chartPoints[index].val,
+        cx: parseFloat(coordPair[0]),
+        cy: parseFloat(coordPair[1])
+      });
+    }
+  };
+
+  const strokeColor = isPositive ? '#34d399' : '#f87171';
+  const fillColor = isPositive ? 'url(#greenGlow)' : 'url(#redGlow)';
+
+  return (
+    <div className="relative w-full bg-slate-950 rounded-xl p-3 border border-slate-800/80" ref={containerRef}>
+      {/* Dynamic Hover Tooltip Tracker Overlay */}
+      <div className="absolute top-2 left-3 h-8 flex gap-6 text-xs text-slate-400 font-mono">
+        <div>Time Frame: <span className="text-slate-100 font-bold">{hoverData ? hoverData.time : '09:30 - 16:00'}</span></div>
+        <div>Indexed Spot: <span className={`${isPositive ? 'text-emerald-400' : 'text-rose-400'} font-bold`}>${hoverData ? hoverData.price.toFixed(2) : basePrice.toFixed(2)}</span></div>
+      </div>
+
+      <svg 
+        viewBox={`0 0 ${width} ${height}`} 
+        className="w-full h-auto mt-6 overflow-visible cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverData(null)}
+      >
+        <defs>
+          <linearGradient id="greenGlow" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.25"/>
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.0"/>
+          </linearGradient>
+          <linearGradient id="redGlow" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.25"/>
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0"/>
+          </linearGradient>
+        </defs>
+
+        {/* Grid Background Lines */}
+        <line x1="20" y1="20" x2={width - 20} y2="20" stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
+        <line x1="20" y1={height / 2} x2={width - 20} y2={height / 2} stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
+        <line x1="20" y1={height - 20} x2={width - 20} y2={height - 20} stroke="#334155" strokeWidth="1"/>
+
+        {/* Shaded Price Area under path */}
+        <path d={areaPath} fill={fillColor} />
+
+        {/* Core Line Trace */}
+        <path d={linePath} fill="none" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Crosshair Tracking Indicators */}
+        {hoverData && (
+          <>
+            <line x1={hoverData.cx} y1="20" x2={hoverData.cx} y2={height - 20} stroke="#475569" strokeWidth="1" strokeDasharray="2 2" />
+            <circle cx={hoverData.cx} cy={hoverData.cy} r="4" fill={strokeColor} stroke="#0f172a" strokeWidth="1.5" />
+          </>
+        )}
+      </svg>
+    </div>
+  );
+}
 
 export default function App() {
   // --- STATE MANAGEMENT ---
@@ -269,7 +389,6 @@ export default function App() {
     return `${parsedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${parsedDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })}`;
   };
 
-  // Adjusted logic elements to map index layouts safely to standard system views (Pulled ahead by 1 day)
   const getCalendarDays = (viewDate) => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -629,6 +748,8 @@ export default function App() {
     return region === selectedExchangeFilter;
   });
 
+  const activeStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
+
   if (!mounted) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">Loading Global Ingestion Matrix...</div>;
 
   return (
@@ -909,59 +1030,57 @@ export default function App() {
               </div>
             </div>
 
-            {/* DYNAMIC INTRADAY PRICE VISUALIZATION HUB */}
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 space-y-4">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Intraday Telemetry Stream</p>
-                <h3 className="text-base font-semibold text-slate-200 mt-0.5">
-                  {selectedTicker} Analytical Performance Matrix
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Monitoring real-time trading parameters for <span className="text-slate-300 font-medium">{(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.name}</span> inside the {selectedDate} timeframe.
-                </p>
-              </div>
+            {/* UPGRADED INTRADAY PRICE TELEMETRY STREAM CHART PANEL */}
+            {activeStock && !marketStatus.closed ? (
+              <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 space-y-4 animate-fadeIn">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Intraday Telemetry Stream</p>
+                  <h3 className="text-base font-semibold text-slate-200 mt-0.5">
+                    {selectedTicker} Trading Performance Grid
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Sourcing continuous 15-minute intervals for <span className="text-slate-300 font-medium">{activeStock.name}</span> over trading frame {selectedDate}.
+                  </p>
+                </div>
 
-              <GenerateWidget height="450px">
-                ```json
-                {
-                  "widgetSpec": {
-                    "height": "450px",
-                    "prompt": "**Objective:** Render an elegant interactive stock line chart detailing price trends over a single day. \n **Data State:** Use current ticker symbol: \"AAPL\", asset name: \"Apple Inc.\", baseline price: 175.00, net change percent: 0.5. Allow inputs to pass distinct ticker values dynamically. \n **Strategy:** Standard Layout. \n **Inputs:** Volatility Index Factor (slider from 1 to 5, default 2), Timeframe Resolution (segmented picker: 5m, 15m, 1h, default 15m). \n **Visuals/Behavior:** Generate a seamless continuous path mimicking real-time 9:30 AM to 4:00 PM market intervals. Use a gradient filled area under the price line. Line color must change dynamically (emerald if change percentage is positive, rose color if negative). Display a floating crosshair element that follows the pointer coordinate values to trace price and timestamp positions dynamically along the chart grid."
-                  }
-                }
-                ```
-              </GenerateWidget>
+                {/* Inline SVG Chart Implementation */}
+                <IntradayLineChart 
+                  ticker={selectedTicker} 
+                  basePrice={activeStock.price} 
+                  isPositive={activeStock.change >= 0} 
+                />
 
-              {/* CONDITIONAL PRICE FOOTER TICKER STRIP */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
-                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                  <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
-                  <span className="text-slate-200 font-semibold">${((marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.price * 0.995).toFixed(2)}</span>
-                </div>
-                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                  <span className="text-slate-500 block text-[10px] uppercase">Intraday Apex</span>
-                  <span className="text-emerald-400 font-semibold">${((marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.price * 1.012).toFixed(2)}</span>
-                </div>
-                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                  <span className="text-slate-500 block text-[10px] uppercase">Intraday Trough</span>
-                  <span className="text-rose-400 font-semibold">${((marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.price * 0.984).toFixed(2)}</span>
-                </div>
-                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                  <span className="text-slate-500 block text-[10px] uppercase">Relative Strength (RSI)</span>
-                  <span className="text-cyan-400 font-semibold">{(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.rsi || 50}</span>
+                {/* Performance Metric Footer Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
+                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                    <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
+                    <span className="text-slate-200 font-semibold">${(activeStock.price * 0.995).toFixed(2)}</span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                    <span className="text-slate-500 block text-[10px] uppercase">Intraday Apex</span>
+                    <span className="text-emerald-400 font-semibold">${(activeStock.price * 1.012).toFixed(2)}</span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                    <span className="text-slate-500 block text-[10px] uppercase">Intraday Trough</span>
+                    <span className="text-rose-400 font-semibold">${(activeStock.price * 0.984).toFixed(2)}</span>
+                  </div>
+                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                    <span className="text-slate-500 block text-[10px] uppercase">Relative Strength (RSI)</span>
+                    <span className="text-cyan-400 font-semibold">{activeStock.rsi || 50}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
               <h2 className="text-sm font-semibold text-slate-300 mb-4 uppercase tracking-wider">Simulated Execution Terminal</h2>
-              {(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker]) && !marketStatus.closed ? (
+              {activeStock && !marketStatus.closed ? (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
                     <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
                     <span className="text-sm text-slate-300 ml-2 font-mono">
-                      @ ${(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker]).price.toFixed(2)}
+                      @ ${activeStock.price.toFixed(2)}
                     </span>
                   </div>
                   
