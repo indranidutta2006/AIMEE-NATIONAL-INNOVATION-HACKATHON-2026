@@ -665,36 +665,84 @@ export default function App() {
                   </div>
 
                   {isCalendarOpen && (
-                    <div className="absolute right-0 top-full z-50 mt-2 w-full bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-2xl">
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="rounded-lg bg-slate-950 p-2 text-center">
-                            <span className="text-[10px] uppercase text-slate-500 block">Hours</span>
-                            <div className="flex justify-center gap-2 mt-1">
-                              <button onClick={() => updateTimeField('hour', -1)} className="text-slate-400 font-bold px-1">-</button>
-                              <span className="font-mono text-sm">{timeInputDraft.split(':')[0] || '00'}</span>
-                              <button onClick={() => updateTimeField('hour', 1)} className="text-slate-400 font-bold px-1">+</button>
-                            </div>
-                          </div>
-                          <div className="rounded-lg bg-slate-950 p-2 text-center">
-                            <span className="text-[10px] uppercase text-slate-500 block">Minutes</span>
-                            <div className="flex justify-center gap-2 mt-1">
-                              <button onClick={() => updateTimeField('minute', -1)} className="text-slate-400 font-bold px-1">-</button>
-                              <span className="font-mono text-sm">{timeInputDraft.split(':')[1] || '00'}</span>
-                              <button onClick={() => updateTimeField('minute', 1)} className="text-slate-400 font-bold px-1">+</button>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
-                          {calendarDays.map((day, i) => day && (
-                            <button key={i} onClick={() => handleCalendarDateSelect(toNYDateInputValue(day))} className={`p-1 rounded ${toNYDateInputValue(day) === calendarSelectionDate ? 'bg-cyan-600 text-white' : 'hover:bg-slate-800'}`}>
-                              {day.getDate()}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+    <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
+      {/* Month & Year Navigation Control Bar */}
+      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        <button 
+          type="button"
+          onClick={() => setCalendarViewDate(new Date(calendarViewDate.setMonth(calendarViewDate.getMonth() - 1)))}
+          className="text-slate-400 hover:text-white p-1 font-mono transition"
+        >
+          &lt;
+        </button>
+        <span className="text-xs font-semibold tracking-wide text-slate-200 uppercase">
+          {calendarViewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+        </span>
+        <button 
+          type="button"
+          onClick={() => setCalendarViewDate(new Date(calendarViewDate.setMonth(calendarViewDate.getMonth() + 1)))}
+          className="text-slate-400 hover:text-white p-1 font-mono transition"
+        >
+          &gt;
+        </button>
+      </div>
+
+      {/* Day Names Grid Header Array */}
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+        <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+      </div>
+
+      {/* Dynamic Days Grid Blocks */}
+      <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
+        {calendarDays.map((day, i) => {
+          if (!day) {
+            return <div key={`empty-${i}`} className="p-1.5 opacity-0 select-none">--</div>;
+          }
+          
+          const dateString = toNYDateInputValue(day);
+          const isSelected = dateString === calendarSelectionDate;
+          const isToday = toNYDateInputValue(new Date()) === dateString;
+
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => handleCalendarDateSelect(dateString)}
+              className={`p-1.5 rounded-md font-medium transition duration-150 text-center ${
+                isSelected
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20'
+                  : isToday
+                  ? 'border border-cyan-500/50 bg-cyan-500/5 text-cyan-400 hover:bg-slate-800'
+                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
+              }`}
+            >
+              {day.getDate()}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Compact Time Increment Sliders Section */}
+      <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
+          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
+          <div className="flex justify-between items-center mt-1 px-1">
+            <button type="button" onClick={() => updateTimeField('hour', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
+            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[0] || '00'}</span>
+            <button type="button" onClick={() => updateTimeField('hour', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
+          </div>
+        </div>
+        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
+          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Minute</span>
+          <div className="flex justify-between items-center mt-1 px-1">
+            <button type="button" onClick={() => updateTimeField('minute', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
+            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[1] || '00'}</span>
+            <button type="button" onClick={() => updateTimeField('minute', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
                 </div>
               </div>
             </div>
