@@ -106,33 +106,28 @@ const getMarketHolidaysForYear = (year) => {
 
 // --- MAIN EXPORTED FUNCTIONS ---
 
+// FIXED: Clean timezone parsing decoupled from local machine timezone offsets
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
-  // 1. Split the string parts manually to ignore the local machine's timezone settings
   const [yearStr, monthStr, dayStr] = value.split('-');
   const [hourStr, minuteStr] = timeValue.split(':');
 
   const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10) - 1; // JS Months are 0-indexed (Jan = 0)
+  const month = parseInt(monthStr, 10) - 1; 
   const day = parseInt(dayStr, 10);
   const hour = parseInt(hourStr, 10);
   const minute = parseInt(minuteStr, 10);
 
-  // 2. Treat the raw values as if they are already native New York Time parameters
-  // To verify weekends accurately, we instantiate a safe UTC representation of these exact numbers
   const targetDate = new Date(Date.UTC(year, month, day, hour, minute));
   
-  // 3. Extract the correct day of the week component directly using the UTC index value
-  const dayOfWeek = targetDate.getUTCDay(); // 0 = Sunday, 6 = Saturday
+  const dayOfWeek = targetDate.getUTCDay(); 
   if (dayOfWeek === 0 || dayOfWeek === 6) return true;
 
-  // 4. Check dynamic holiday sets against the targeted calendar tracking date
   const marketHolidays = getMarketHolidaysForYear(year);
   const normalizedDate = `${yearStr}-${monthStr}-${dayStr}`;
   if (marketHolidays.has(normalizedDate)) return true;
 
-  // 5. Enforce core trading floor schedule constraints (9:30 AM to 4:00 PM Eastern Time)
   const totalMinutes = hour * 60 + minute;
   return totalMinutes < 570 || totalMinutes >= 960;
 };
@@ -153,6 +148,16 @@ const toNYTimeInputValue = (date) => {
   });
   const [{ value: hour }, , { value: minute }] = formatter.formatToParts(date);
   return `${hour}:${minute}`;
+};
+
+// Returns a safe fallback date (Latest Monday if today is a weekend) to prevent initial blackouts
+const getInitialOpenDateValue = () => {
+  const d = new Date();
+  // Check if it's weekend, roll back to Friday if it is
+  const day = d.getDay();
+  if (day === 0) d.setDate(d.getDate() - 2);
+  else if (day === 6) d.setDate(d.getDate() - 1);
+  return toNYDateInputValue(d);
 };
 
 const getCurrentDateValue = () => toNYDateInputValue(new Date());
@@ -194,8 +199,8 @@ const getAdjustedTimeValue = (value, field, direction) => {
 export default function App() {
   // --- STATE MANAGEMENT ---
   const [cash, setCash] = useState(100000.00); 
-  const [cashInput, setCashInput] = useState("100000.00"); // Dynamic buffer variable for text/number fields
-  const [watchlist, setWatchlist] = useState(TOP_15_COMPANIES); // Seeded with top 15 list instead of 4
+  const [cashInput, setCashInput] = useState("100000.00"); 
+  const [watchlist, setWatchlist] = useState(TOP_15_COMPANIES); 
   const [marketStocks, setMarketStocks] = useState({});
   const [selectedExchangeFilter, setSelectedExchangeFilter] = useState('ALL'); 
   const [portfolio, setPortfolio] = useState([
@@ -215,11 +220,14 @@ export default function App() {
   const [rateLimitTimer, setRateLimitTimer] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(() => getCurrentDateValue());
-  const [selectedTime, setSelectedTime] = useState(() => getCurrentTimeValue());
-  const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getCurrentDateValue());
-  const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => getCurrentTimeValue());
-  const [timeInputDraft, setTimeInputDraft] = useState(() => getCurrentTimeValue());
+
+  // FIXED: Initialized states to look at standard active market hours (10:00 AM NY Time) instead of your local midnight context
+  const [selectedDate, setSelectedDate] = useState(() => getInitialOpenDateValue());
+  const [selectedTime, setSelectedTime] = useState(() => "10:00");
+  const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getInitialOpenDateValue());
+  const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => "10:00");
+  const [timeInputDraft, setTimeInputDraft] = useState(() => "10:00");
+  
   const [timeInputError, setTimeInputError] = useState('');
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -264,7 +272,7 @@ export default function App() {
     return `${parsedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${parsedDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })}`;
   };
 
-  // FIXED: Day allocation algorithms pulled forward by 1 index offset location cleanly
+  // FIXED: Adjusted logic elements to map index layouts safely to standard system views
   const getCalendarDays = (viewDate) => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -273,7 +281,6 @@ export default function App() {
     const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
     const firstDayOfWeek = firstDay.getUTCDay();
     
-    // Pulled ahead by 1 index matrix block to reflect default operating terminal structures
     const leadingDays = firstDayOfWeek === 0 ? 0 : firstDayOfWeek;
     const cells = [];
     
@@ -380,8 +387,8 @@ export default function App() {
   }, [selectedDate, selectedTime]);
 
   const fetchMarketData = useCallback(async (forcedSymbols = null, bypassCache = false, dateOverride = null, timeOverride = null) => {
-    const selectedDateValue = dateOverride || selectedDate || getCurrentDateValue();
-    const selectedTimeValue = timeOverride || selectedTime || getCurrentTimeValue();
+    const selectedDateValue = dateOverride || selectedDate;
+    const selectedTimeValue = timeOverride || selectedTime;
 
     if (isMarketClosedForDate(selectedDateValue, selectedTimeValue)) {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
@@ -434,6 +441,7 @@ export default function App() {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
       setApiMode('Closed Terminal');
     } else {
+      setMarketStatus({ closed: false, message: '' });
       fetchMarketData();
     }
 
@@ -468,16 +476,20 @@ export default function App() {
   };
 
   const confirmSelectedDate = () => {
-    const nextDate = calendarSelectionDate || getCurrentDateValue();
-    const nextTime = calendarSelectionTime || getCurrentTimeValue();
+    const nextDate = calendarSelectionDate;
+    const nextTime = calendarSelectionTime;
     setSelectedDate(nextDate);
     setSelectedTime(nextTime);
     playbackClockRef.current = new Date(`${nextDate}T${nextTime}`);
+    
+    if (!isMarketClosedForDate(nextDate, nextTime)) {
+      setMarketStatus({ closed: false, message: '' });
+    }
     fetchMarketData(null, true, nextDate, nextTime);
   };
 
   const updateTimeField = (field, direction) => {
-    const nextTime = getAdjustedTimeValue(calendarSelectionTime || getCurrentTimeValue(), field, direction);
+    const nextTime = getAdjustedTimeValue(calendarSelectionTime, field, direction);
     setCalendarSelectionTime(nextTime);
     setTimeInputDraft(nextTime);
   };
