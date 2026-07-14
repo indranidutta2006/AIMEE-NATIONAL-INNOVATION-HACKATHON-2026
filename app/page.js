@@ -20,15 +20,110 @@ const MARKET_HOLIDAYS = new Set([
 
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
+
   const parsedDate = new Date(`${value}T${timeValue}`);
   if (Number.isNaN(parsedDate.getTime())) return true;
-  const day = parsedDate.getDay();
-  if (day === 0 || day === 6) return true;
-  
-  const normalizedDate = `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}-${String(parsedDate.getDate()).padStart(2, '0')}`;
-  if (MARKET_HOLIDAYS.has(normalizedDate)) return true;
 
-  const minutes = parsedDate.getHours() * 60 + parsedDate.getMinutes();
+  // --- HELPER FUNCTIONS ---
+
+  // Calculate the Nth occurrence of a specific weekday in a month (e.g., 3rd Monday of Jan)
+  // dayOfWeek: 0 = Sunday, 1 = Monday, etc. Month is 0-indexed.
+  const getNthWeekdayOfMonth = (year, month, dayOfWeek, n) => {
+    let count = 0;
+    const date = new Date(Date.UTC(year, month, 1));
+    while (date.getUTCMonth() === month) {
+      if (date.getUTCDay() === dayOfWeek) {
+        count++;
+        if (count === n) return date;
+      }
+      date.setUTCDate(date.getUTCDate() + 1);
+    }
+    return null;
+  };
+
+  // Get the last occurrence of a weekday in a month (e.g., Memorial Day)
+  const getLastWeekdayOfMonth = (year, month, dayOfWeek) => {
+    const date = new Date(Date.UTC(year, month + 1, 0)); // Last day of month
+    while (date.getUTCDay() !== dayOfWeek) {
+      date.setUTCDate(date.getUTCDate() - 1);
+    }
+    return date;
+  };
+
+  // Gauss's Easter Algorithm to find Good Friday
+  const getGoodFriday = (year) => {
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    
+    const easter = new Date(Date.UTC(year, month, day));
+    easter.setUTCDate(easter.getUTCDate() - 2); // Good Friday is 2 days before Easter
+    return easter;
+  };
+
+  // Adjusts fixed-date holidays if they fall on a weekend
+  const getObservedDate = (date) => {
+    const day = date.getUTCDay();
+    if (day === 0) date.setUTCDate(date.getUTCDate() + 1); // Sunday -> Monday
+    if (day === 6) date.setUTCDate(date.getUTCDate() - 1); // Saturday -> Friday
+    return date;
+  };
+
+  // Generates a Set of YYYY-MM-DD strings for a given year's market holidays
+  const getMarketHolidaysForYear = (year) => {
+    const holidays = [
+      getObservedDate(new Date(Date.UTC(year, 0, 1))),   // New Year's Day
+      getNthWeekdayOfMonth(year, 0, 1, 3),              // MLK Jr. Day (3rd Monday in Jan)
+      getNthWeekdayOfMonth(year, 1, 1, 3),              // Presidents' Day (3rd Monday in Feb)
+      getGoodFriday(year),                              // Good Friday
+      getLastWeekdayOfMonth(year, 4, 1),                // Memorial Day (Last Monday in May)
+      getObservedDate(new Date(Date.UTC(year, 5, 19))), // Juneteenth
+      getObservedDate(new Date(Date.UTC(year, 6, 4))),  // Independence Day
+      getNthWeekdayOfMonth(year, 8, 1, 1),              // Labor Day (1st Monday in Sep)
+      getNthWeekdayOfMonth(year, 10, 1, 4),             // Thanksgiving (4th Thursday in Nov)
+      getObservedDate(new Date(Date.UTC(year, 11, 25))),// Christmas Day
+    ];
+
+    return new Set(holidays.map(d => d.toISOString().split('T')[0]));
+  };
+
+  // --- MAIN EXECUTION LOGIC ---
+
+  // Convert incoming date strictly to New York Time parts
+  const nyFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: 'numeric', minute: 'numeric', hour12: false, weekday: 'short'
+  });
+
+  const parts = nyFormatter.formatToParts(parsedDate).reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  // 1. Weekend Check
+  if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return true;
+
+  // 2. Dynamic Holiday Check
+  const year = parseInt(parts.year, 10);
+  const marketHolidays = getMarketHolidaysForYear(year);
+  const normalizedDate = `${parts.year}-${parts.month}-${parts.day}`;
+  
+  if (marketHolidays.has(normalizedDate)) return true;
+
+  // 3. Core Market Hours Check (9:30 AM to 4:00 PM Eastern)
+  const minutes = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
   return minutes < 570 || minutes >= 960;
 };
 
