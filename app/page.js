@@ -128,6 +128,8 @@ export default function App() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState({ closed: false, message: '' });
   const [lastExtractedAt, setLastExtractedAt] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [marketRegion, setMarketRegion] = useState('US');
   const playbackClockRef = useRef(new Date());
 
   const formatSelectedDate = (value) => {
@@ -945,175 +947,224 @@ export default function App() {
         )}
 
         {/* MAIN BODY LAYOUT */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* COLUMN 1 & 2: MARKET TILES AND TRADE CONTROL PANEL */}
-          <div className="lg:col-span-2 space-y-6">
-            
-            {/* LIVE BOARD & TICKER ADDER */}
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-4">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Asset Watchlist & Ingestion Panel</h2>
-                
-                {/* Search Form */}
-                <form onSubmit={handleAddTicker} className="flex gap-2 w-full sm:w-auto">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Add Ticker (e.g. INFY.NSE)"
-                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono w-full sm:w-48"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap"
-                  >
-                    + Track
-                  </button>
-                </form>
+        <div className="grid gap-6 lg:grid-cols-[minmax(260px,280px)_minmax(0,2fr)]">
+          <aside className="bg-slate-900 border border-slate-800/80 rounded-3xl p-4 transition-all duration-300">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Market Navigator</p>
+                <h2 className="text-lg font-semibold text-slate-100">Regional Dashboard</h2>
               </div>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen((open) => !open)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/80 text-slate-300 transition hover:border-cyan-500 hover:text-cyan-300"
+              >
+                {sidebarOpen ? '«' : '»'}
+              </button>
+            </div>
 
-              {/* Watchlist Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {watchlist.map((ticker) => {
-                  const stock = marketStocks[ticker];
-                  if (!stock) {
-                    return (
-                      <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center animate-pulse">
-                        <span className="font-mono font-bold text-slate-500">{ticker}</span>
-                        <span className="text-xs text-slate-600 font-mono">Resolving...</span>
+            <div className={`mt-6 space-y-3 ${sidebarOpen ? 'opacity-100' : 'opacity-30'} transition-opacity duration-300`}>
+              <button
+                type="button"
+                onClick={() => setMarketRegion('US')}
+                className={`w-full rounded-2xl border px-4 py-4 text-left transition ${marketRegion === 'US' ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900'}`}
+              >
+                <p className="text-sm font-semibold">US Stock Market</p>
+                <p className="text-xs text-slate-400 mt-1">Current dashboard view</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMarketRegion('IN')}
+                className={`w-full rounded-2xl border px-4 py-4 text-left transition ${marketRegion === 'IN' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:bg-slate-900'}`}
+              >
+                <p className="text-sm font-semibold">Indian Stock Market</p>
+                <p className="text-xs text-slate-400 mt-1">Clear dashboard layout for now</p>
+              </button>
+            </div>
+
+            {sidebarOpen && (
+              <div className="mt-6 rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4">
+                <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Status</p>
+                <p className="mt-3 text-sm text-slate-200">
+                  {marketRegion === 'US'
+                    ? 'US stock dashboard is active and live.'
+                    : 'Indian stock dashboard is intentionally clear for this version.'}
+                </p>
+              </div>
+            )}
+          </aside>
+
+          <div className="space-y-6">
+            {marketRegion === 'IN' ? (
+              <div className="bg-slate-900 border border-slate-800/80 rounded-3xl p-8 text-center">
+                <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300 text-2xl">
+                  🇮🇳
+                </div>
+                <h2 className="mt-6 text-xl font-semibold text-slate-100">Indian Stock Market Dashboard</h2>
+                <p className="mt-3 text-sm leading-6 text-slate-400 max-w-2xl mx-auto">
+                  This regional view is intentionally kept clean for now. Select the US Stock Market to return to the active ApexTrader simulation dashboard.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* LIVE BOARD & TICKER ADDER */}
+                <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Asset Watchlist & Ingestion Panel</h2>
+                    <form onSubmit={handleAddTicker} className="flex gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Add Ticker (e.g. INFY.NSE)"
+                        className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono w-full sm:w-48"
+                      />
+                      <button
+                        type="submit"
+                        className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap"
+                      >
+                        + Track
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {watchlist.map((ticker) => {
+                      const stock = marketStocks[ticker];
+                      if (!stock) {
+                        return (
+                          <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center animate-pulse">
+                            <span className="font-mono font-bold text-slate-500">{ticker}</span>
+                            <span className="text-xs text-slate-600 font-mono">Resolving...</span>
+                          </div>
+                        );
+                      }
+                      const isPositive = stock.change >= 0;
+                      const isClosedPrice = marketStatus.closed || stock.marketClosed || stock.price === null;
+                      const displayPrice = isClosedPrice ? '--' : `$${stock.price.toFixed(2)}`;
+                      const displayChange = isClosedPrice ? '--' : `${isPositive ? '+' : ''}${stock.change.toFixed(2)}%`;
+                      return (
+                        <div
+                          key={ticker}
+                          onClick={() => setSelectedTicker(ticker)}
+                          className={`p-4 rounded-lg border transition cursor-pointer ${
+                            selectedTicker === ticker
+                              ? 'bg-slate-800/80 border-cyan-500'
+                              : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="font-mono font-bold text-lg">{ticker}</span>
+                              <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{stock.name}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono font-bold text-base">{displayPrice}</p>
+                              <span className={`text-xs font-mono font-medium ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {displayChange}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
+                  <h2 className="text-sm font-semibold text-slate-300 mb-4 uppercase tracking-wider">Simulated Execution Terminal</h2>
+                  {marketStocks[selectedTicker] ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
+                        <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
+                        <span className="text-sm text-slate-300 ml-2 font-mono">
+                          @ {marketStatus.closed || marketStocks[selectedTicker].marketClosed || marketStocks[selectedTicker].price === null ? '--' : `$${marketStocks[selectedTicker].price.toFixed(2)}`}
+                        </span>
                       </div>
-                    );
-                  }
-                  const isPositive = stock.change >= 0;
-                  const isClosedPrice = marketStatus.closed || stock.marketClosed || stock.price === null;
-                  const displayPrice = isClosedPrice ? '--' : `$${stock.price.toFixed(2)}`;
-                  const displayChange = isClosedPrice ? '--' : `${isPositive ? '+' : ''}${stock.change.toFixed(2)}%`;
-                  return (
-                    <div 
-                      key={ticker} 
-                      onClick={() => setSelectedTicker(ticker)}
-                      className={`p-4 rounded-lg border transition cursor-pointer ${
-                        selectedTicker === ticker 
-                          ? 'bg-slate-800/80 border-cyan-500' 
-                          : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <span className="font-mono font-bold text-lg">{ticker}</span>
-                          <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{stock.name}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-mono font-bold text-base">{displayPrice}</p>
-                          <span className={`text-xs font-mono font-medium ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {displayChange}
-                          </span>
-                        </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-400 whitespace-nowrap">Shares Volume:</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={tradeShares}
+                          onChange={(e) => setTradeShares(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-20 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-center font-mono focus:outline-none focus:border-cyan-500 text-white"
+                        />
+                      </div>
+
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={handleBuy}
+                          disabled={marketStatus.closed}
+                          className={`flex-1 sm:flex-none font-semibold px-6 py-2 rounded-lg transition text-sm text-center ${marketStatus.closed ? 'cursor-not-allowed bg-slate-700 text-slate-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                        >
+                          Buy Order
+                        </button>
+                        <button
+                          onClick={handleSell}
+                          disabled={marketStatus.closed}
+                          className={`flex-1 sm:flex-none font-semibold px-6 py-2 rounded-lg transition text-sm text-center ${marketStatus.closed ? 'cursor-not-allowed bg-slate-700 text-slate-400' : 'bg-rose-600 hover:bg-rose-500 text-white'}`}
+                        >
+                          Sell Order
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* TRANSACTION TERMINAL */}
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
-              <h2 className="text-sm font-semibold text-slate-300 mb-4 uppercase tracking-wider">Simulated Execution Terminal</h2>
-              {marketStocks[selectedTicker] ? (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
-                    <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
-                    <span className="text-sm text-slate-300 ml-2 font-mono">
-                      @ {marketStatus.closed || marketStocks[selectedTicker].marketClosed || marketStocks[selectedTicker].price === null ? '--' : `$${marketStocks[selectedTicker].price.toFixed(2)}`}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-400 whitespace-nowrap">Shares Volume:</label>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      value={tradeShares}
-                      onChange={(e) => setTradeShares(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-20 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-center font-mono focus:outline-none focus:border-cyan-500 text-white"
-                    />
-                  </div>
-
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <button 
-                      onClick={handleBuy}
-                      disabled={marketStatus.closed}
-                      className={`flex-1 sm:flex-none font-semibold px-6 py-2 rounded-lg transition text-sm text-center ${marketStatus.closed ? 'cursor-not-allowed bg-slate-700 text-slate-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
-                    >
-                      Buy Order
-                    </button>
-                    <button 
-                      onClick={handleSell}
-                      disabled={marketStatus.closed}
-                      className={`flex-1 sm:flex-none font-semibold px-6 py-2 rounded-lg transition text-sm text-center ${marketStatus.closed ? 'cursor-not-allowed bg-slate-700 text-slate-400' : 'bg-rose-600 hover:bg-rose-500 text-white'}`}
-                    >
-                      Sell Order
-                    </button>
-                  </div>
+                  ) : (
+                    <p className="text-sm text-slate-500 py-2">Select a symbol from your watchlist or add one above to access transaction fields.</p>
+                  )}
                 </div>
-              ) : (
-                <p className="text-sm text-slate-500 py-2">Select a symbol from your watchlist or add one above to access transaction fields.</p>
-              )}
-            </div>
 
-            {/* PORTFOLIO LIST */}
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Your Position Portfolio</h2>
-              {portfolio.length === 0 ? (
-                <p className="text-sm text-slate-500 py-4 text-center">No active stock holdings found. Expand your watchlist to begin.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm font-mono">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-400 text-xs">
-                        <th className="pb-2">Ticker</th>
-                        <th className="pb-2">Shares Owned</th>
-                        <th className="pb-2">Avg Buy Price</th>
-                        <th className="pb-2">Current Value</th>
-                        <th className="pb-2 text-right">Unrealized Net P&L</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60">
-                      {portfolio.map((pos) => {
-                        const currentPrice = marketStocks[pos.ticker]?.price;
-                        const displayPrice = marketStatus.closed || currentPrice === null || currentPrice === undefined ? '--' : `$${(currentPrice).toFixed(2)}`;
-                        const value = currentPrice === null || currentPrice === undefined ? 0 : pos.shares * currentPrice;
-                        const pnl = currentPrice === null || currentPrice === undefined ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
-                        return (
-                          <tr key={pos.ticker} className="hover:bg-slate-800/30">
-                            <td className="py-3 font-bold text-slate-200">{pos.ticker}</td>
-                            <td className="py-3 text-slate-300">{pos.shares}</td>
-                            <td className="py-3 text-slate-400">${pos.avgBuyPrice.toFixed(2)}</td>
-                            <td className="py-3 font-semibold text-slate-200">{displayPrice}</td>
-                            <td className={`py-3 text-right font-bold ${pnl !== null && pnl >= 0 ? 'text-emerald-400' : pnl !== null ? 'text-rose-400' : 'text-slate-400'}`}>
-                              {pnl === null ? '--' : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`}
-                            </td>
+                <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
+                  <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Your Position Portfolio</h2>
+                  {portfolio.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-4 text-center">No active stock holdings found. Expand your watchlist to begin.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm font-mono">
+                        <thead>
+                          <tr className="border-b border-slate-800 text-slate-400 text-xs">
+                            <th className="pb-2">Ticker</th>
+                            <th className="pb-2">Shares Owned</th>
+                            <th className="pb-2">Avg Buy Price</th>
+                            <th className="pb-2">Current Value</th>
+                            <th className="pb-2 text-right">Unrealized Net P&L</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {portfolio.map((pos) => {
+                            const currentPrice = marketStocks[pos.ticker]?.price;
+                            const displayPrice = marketStatus.closed || currentPrice === null || currentPrice === undefined ? '--' : `$${(currentPrice).toFixed(2)}`;
+                            const value = currentPrice === null || currentPrice === undefined ? 0 : pos.shares * currentPrice;
+                            const pnl = currentPrice === null || currentPrice === undefined ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
+                            return (
+                              <tr key={pos.ticker} className="hover:bg-slate-800/30">
+                                <td className="py-3 font-bold text-slate-200">{pos.ticker}</td>
+                                <td className="py-3 text-slate-300">{pos.shares}</td>
+                                <td className="py-3 text-slate-400">${pos.avgBuyPrice.toFixed(2)}</td>
+                                <td className="py-3 font-semibold text-slate-200">{displayPrice}</td>
+                                <td className={`py-3 text-right font-bold ${pnl !== null && pnl >= 0 ? 'text-emerald-400' : pnl !== null ? 'text-rose-400' : 'text-slate-400'}`}>
+                                  {pnl === null ? '--' : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
 
-          </div>
-
-          {/* SIDEBAR: AI DIAGNOSTICS */}
-          <div className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 min-h-[300px]">
+            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
               <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
                 <span className="p-1.5 bg-purple-500/10 text-purple-400 rounded">💡</span>
                 <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">AI Loss Autopsy Console</h2>
               </div>
-              
+
               {autopsyReport ? (
                 <div className="space-y-4 animate-fadeIn">
                   <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-xs">
@@ -1147,7 +1198,6 @@ export default function App() {
               )}
             </div>
           </div>
-
         </div>
 
       </div>
