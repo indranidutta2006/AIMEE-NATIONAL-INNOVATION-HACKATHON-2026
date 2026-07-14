@@ -191,19 +191,16 @@ const getAdjustedTimeValue = (value, field, direction) => {
   return toNYTimeInputValue(next);
 };
 
-// Pure, zero-dependency client chart engine to mock linear time-series paths seamlessly
 function IntradayLineChart({ basePrice, ticker, isPositive }) {
   const containerRef = useRef(null);
   const [hoverData, setHoverData] = useState(null);
   const [chartPoints, setChartPoints] = useState([]);
 
-  // Generate an array of 40 stable linear coordinates representing a 9:30 - 16:00 trading matrix
   useEffect(() => {
     let currentPrice = basePrice * 0.99;
     const items = [];
     const seed = ticker.charCodeAt(0) + ticker.charCodeAt(ticker.length - 1);
     
-    // Deterministic random walk sequence generator based on stock ticker identity
     const pseudoRandom = (index) => {
       const x = Math.sin(seed + index) * 10000;
       return x - Math.floor(x);
@@ -228,11 +225,9 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
   const maxVal = Math.max(...chartPoints.map(p => p.val));
   const marginRange = maxVal - minVal === 0 ? 1 : maxVal - minVal;
 
-  // Chart viewbox boundaries
   const width = 600;
   const height = 240;
 
-  // Generate SVG Coordinate String
   const svgPoints = chartPoints.map((p, idx) => {
     const x = (idx / (chartPoints.length - 1)) * (width - 40) + 20;
     const y = height - 20 - ((p.val - minVal) / marginRange) * (height - 40);
@@ -267,7 +262,6 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
 
   return (
     <div className="relative w-full bg-slate-950 rounded-xl p-3 border border-slate-800/80" ref={containerRef}>
-      {/* Dynamic Hover Tooltip Tracker Overlay */}
       <div className="absolute top-2 left-3 h-8 flex gap-6 text-xs text-slate-400 font-mono">
         <div>Time Frame: <span className="text-slate-100 font-bold">{hoverData ? hoverData.time : '09:30 - 16:00'}</span></div>
         <div>Indexed Spot: <span className={`${isPositive ? 'text-emerald-400' : 'text-rose-400'} font-bold`}>${hoverData ? hoverData.price.toFixed(2) : basePrice.toFixed(2)}</span></div>
@@ -290,18 +284,13 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
           </linearGradient>
         </defs>
 
-        {/* Grid Background Lines */}
         <line x1="20" y1="20" x2={width - 20} y2="20" stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
         <line x1="20" y1={height / 2} x2={width - 20} y2={height / 2} stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
         <line x1="20" y1={height - 20} x2={width - 20} y2={height - 20} stroke="#334155" strokeWidth="1"/>
 
-        {/* Shaded Price Area under path */}
         <path d={areaPath} fill={fillColor} />
-
-        {/* Core Line Trace */}
         <path d={linePath} fill="none" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* Crosshair Tracking Indicators */}
         {hoverData && (
           <>
             <line x1={hoverData.cx} y1="20" x2={hoverData.cx} y2={height - 20} stroke="#475569" strokeWidth="1" strokeDasharray="2 2" />
@@ -338,7 +327,6 @@ export default function App() {
   const [mounted, setMounted] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
-  // Initialized states to look at standard active market hours (10:00 AM NY Time)
   const [selectedDate, setSelectedDate] = useState(() => getInitialOpenDateValue());
   const [selectedTime, setSelectedTime] = useState(() => "10:00");
   const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getInitialOpenDateValue());
@@ -539,13 +527,15 @@ export default function App() {
         setApiMode('TwelveData');
         setApiError(null);
       } else {
-        runSimulationTickMemoized();
+        // Fall back to retaining the current state instead of forcing simulation shifts
+        setMarketStocks((prev) => (Object.keys(prev).length > 0 ? prev : BASELINE_STOCKS));
       }
       setLastExtractedAt(new Date());
     } catch (err) {
       setApiMode('Simulation');
-      setApiError('Ingestion limit / Pipeline issue. Local simulation backup engaged.');
-      runSimulationTickMemoized();
+      setApiError('Ingestion limit / Pipeline issue. Falling back to last cached dataset.');
+      // Retain the current data structure instead of executing random drift ticks
+      setMarketStocks((prev) => (Object.keys(prev).length > 0 ? prev : BASELINE_STOCKS));
       setLastExtractedAt(new Date());
     }
   }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
