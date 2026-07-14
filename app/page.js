@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 // Default global watchlist containing multi-exchange assets
 const DEFAULT_WATCHLIST = ['AAPL', 'INFY.NSE', 'BARC.LSE', '7203.T'];
 
-// Baseline fallback prices for different global regions
+// Baseline fallback prices
 const BASELINE_STOCKS = {
   'AAPL': { name: 'Apple Inc. (NASDAQ)', price: 175.00, change: 0.5, rsi: 72, volume: 'High', exchange: 'US' },
   'INFY.NSE': { name: 'Infosys Limited (NSE)', price: 1420.00, change: -1.2, rsi: 38, volume: 'Extreme', exchange: 'India' },
@@ -104,9 +104,19 @@ export default function App() {
   const [lastExtractedAt, setLastExtractedAt] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [marketRegion, setMarketRegion] = useState('US');
+  const [activeMenuItem, setActiveMenuItem] = useState('Overview');
+  const dashboardMenuItems = ['Overview', 'Watchlist', 'Portfolio', 'Analytics', 'Settings'];
   const playbackClockRef = useRef(new Date());
 
-  // Detect and append regional exchange strings to help structure UI metadata
+  const handleMenuSelect = (item) => {
+    setActiveMenuItem(item);
+    const anchor = item === 'Overview' ? 'overview' : item.toLowerCase();
+    const target = document.getElementById(anchor);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   const detectExchangeRegion = (symbol) => {
     if (symbol.endsWith('.NSE') || symbol.endsWith('.BSE')) return 'India';
     if (symbol.endsWith('.LSE') || symbol.endsWith('.PA') || symbol.endsWith('.DE')) return 'Europe';
@@ -144,7 +154,6 @@ export default function App() {
     return cells;
   };
 
-  // --- HYDROGUARD: Prevent Hydration Mismatch ---
   useEffect(() => {
     setMounted(true);
     const savedCash = localStorage.getItem('apex_cash');
@@ -210,7 +219,6 @@ export default function App() {
   };
 
   const runSimulationTick = useCallback(() => {
-    // ENFORCEMENT: If market bounds fall outside hours, explicitly stop the simulation tick
     if (isMarketClosedForDate(selectedDate, selectedTime)) {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
       setApiMode('Closed Terminal');
@@ -238,7 +246,6 @@ export default function App() {
     const selectedDateValue = dateOverride || selectedDate || getCurrentDateValue();
     const selectedTimeValue = timeOverride || selectedTime || getCurrentTimeValue();
 
-    // ENFORCEMENT: Block pipeline completely if outside operating metrics
     if (isMarketClosedForDate(selectedDateValue, selectedTimeValue)) {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
       setApiMode('Closed Terminal');
@@ -283,11 +290,9 @@ export default function App() {
     }
   }, [watchlist, portfolio, runSimulationTick, isManualSim, selectedDate, selectedTime]);
 
-  // Synchronous Core Loop Initialization
   useEffect(() => {
     if (!mounted) return;
     
-    // Assess operational availability on state load 
     if (isMarketClosedForDate(selectedDate, selectedTime)) {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
       setApiMode('Closed Terminal');
@@ -296,7 +301,6 @@ export default function App() {
     }
 
     const activeInterval = setInterval(() => {
-      // Re-evaluate boundaries at every clock tick segment
       if (isMarketClosedForDate(selectedDate, selectedTime)) {
         setMarketStatus({ closed: true, message: 'Market is currently closed.' });
         setApiMode('Closed Terminal');
@@ -335,13 +339,6 @@ export default function App() {
     fetchMarketData(null, true, nextDate, nextTime);
   };
 
-  const handleTimeDraftChange = (event) => {
-    const rawValue = event.target.value;
-    const digitsOnly = String(rawValue || '').replace(/\D/g, '').slice(0, 4);
-    const nextDraft = digitsOnly.length <= 2 ? digitsOnly : `${digitsOnly.slice(0, 2)}:${digitsOnly.slice(2, 4)}`;
-    setTimeInputDraft(nextDraft);
-  };
-
   const updateTimeField = (field, direction) => {
     const nextTime = getAdjustedTimeValue(calendarSelectionTime || getCurrentTimeValue(), field, direction);
     setCalendarSelectionTime(nextTime);
@@ -359,7 +356,6 @@ export default function App() {
       return;
     }
 
-    // Early exit restriction if user attempts an ingestion expansion when market flags closed variables
     if (isMarketClosedForDate(selectedDate, selectedTime)) {
       triggerNotification('Terminal asset intake suspended: Market is Closed.', 'warning');
       setSearchQuery('');
@@ -460,7 +456,7 @@ export default function App() {
   };
 
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
-    if (marketStatus.closed) return 0; // Asset pricing drops if overall market displays closed attributes
+    if (marketStatus.closed) return 0; 
     const currentPrice = marketStocks[curr.ticker]?.price || curr.avgBuyPrice;
     return acc + (curr.shares * currentPrice);
   }, 0);
@@ -481,120 +477,154 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* TOP STATUS DASHBOARD CONTROLS */}
-        <div className="sticky top-0 z-40 rounded-2xl border border-cyan-500/20 bg-slate-900/95 p-4 shadow-2xl backdrop-blur">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Global Cross-Market Terminal</p>
-              <h2 className="text-xl font-semibold text-slate-100">{formatSelectedDate(selectedDate)}</h2>
-              <p className="text-sm text-slate-400">Extraction target: <span className="font-semibold text-slate-200">{formatSelectedDateTime(selectedDate, selectedTime)}</span></p>
-              {marketStatus.closed && (
-                <span className="mt-1 inline-block text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded animate-pulse">
-                  🛑 Operational Limit Reached: Market Closed
-                </span>
-              )}
-            </div>
-
-            {/* TIME ADJUSTMENT HUB */}
-            <div className="relative flex flex-col gap-3 rounded-2xl border border-slate-800/70 bg-slate-950/80 p-3 sm:min-w-[310px]">
-              <div className="flex items-center justify-between gap-3">
-                <button type="button" onClick={() => setIsCalendarOpen(!isCalendarOpen)} className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-left">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">Execution Date</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-100">{formatSelectedDate(calendarSelectionDate)}</p>
-                </button>
-                <button type="button" onClick={() => { confirmSelectedDate(); setIsCalendarOpen(false); }} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-400 hover:bg-cyan-500/20">Enter</button>
-              </div>
-
-              {isCalendarOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-full bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-2xl">
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded-lg bg-slate-950 p-2 text-center">
-                        <span className="text-[10px] uppercase text-slate-500 block">Hours</span>
-                        <div className="flex justify-center gap-2 mt-1">
-                          <button onClick={() => updateTimeField('hour', -1)} className="text-slate-400 font-bold px-1">-</button>
-                          <span className="font-mono text-sm">{timeInputDraft.split(':')[0] || '00'}</span>
-                          <button onClick={() => updateTimeField('hour', 1)} className="text-slate-400 font-bold px-1">+</button>
-                        </div>
-                      </div>
-                      <div className="rounded-lg bg-slate-950 p-2 text-center">
-                        <span className="text-[10px] uppercase text-slate-500 block">Minutes</span>
-                        <div className="flex justify-center gap-2 mt-1">
-                          <button onClick={() => updateTimeField('minute', -1)} className="text-slate-400 font-bold px-1">-</button>
-                          <span className="font-mono text-sm">{timeInputDraft.split(':')[1] || '00'}</span>
-                          <button onClick={() => updateTimeField('minute', 1)} className="text-slate-400 font-bold px-1">+</button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
-                      {calendarDays.map((day, i) => day && (
-                        <button key={i} onClick={() => handleCalendarDateSelect(toDateInputValue(day))} className={`p-1 rounded ${toDateInputValue(day) === calendarSelectionDate ? 'bg-cyan-600 text-white' : 'hover:bg-slate-800'}`}>
-                          {day.getDate()}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+        <section id="overview">
+          <div className="flex flex-col gap-4">
+            <div className="sticky top-0 z-50 rounded-2xl border border-slate-800/70 bg-slate-900/95 p-4 shadow-2xl backdrop-blur">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Dashboard Navigation</p>
+                  <h1 className="text-2xl font-semibold text-slate-100">ApexTrader Global Dashboard</h1>
+                  <p className="text-sm text-slate-400">Quick access to watchlists, portfolio, analytics and actionable controls.</p>
                 </div>
-              )}
+                <div className="flex flex-wrap gap-2">
+                  {dashboardMenuItems.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => handleMenuSelect(item)}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        activeMenuItem === item
+                          ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20'
+                          : 'bg-slate-950/80 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* FINANCIAL SUMMARY ROW */}
-        <header className="border-b border-slate-800 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">ApexTrader Global</h1>
-              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${marketStatus.closed ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'}`}>{apiMode}</span>
-            </div>
-            <p className="text-xs text-slate-400 mt-1">Multi-Exchange Sandbox Environment supporting US, NSE, LSE, and TSE execution structures.</p>
-          </div>
-          <div className="text-left sm:text-right">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Combined Global Net Worth</span>
-            <div className="text-2xl md:text-3xl font-mono font-bold text-emerald-400">
-              ${netWorth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-        </header>
+            {/* FIXED STICKER TOP CONTROL BLOCK (DUPLICATIONS DELETED HERE) */}
+            <div className="sticky top-[92px] z-40 rounded-2xl border border-cyan-500/20 bg-slate-900/95 p-4 shadow-2xl backdrop-blur">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Global Cross-Market Terminal</p>
+                  <h2 className="text-xl font-semibold text-slate-100">{formatSelectedDate(selectedDate)}</h2>
+                  <p className="text-sm text-slate-400">Extraction target: <span className="font-semibold text-slate-200">{formatSelectedDateTime(selectedDate, selectedTime)}</span></p>
+                  {marketStatus.closed && (
+                    <span className="mt-1 inline-block text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded animate-pulse">
+                      🛑 Operational Limit Reached: Market Closed
+                    </span>
+                  )}
+                </div>
 
-        {/* REGIONAL EXCHANGE CONTROLS / FILTER HUB */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
-          {['ALL', 'US', 'India', 'Europe', 'Asia'].map((exchange) => (
-            <button
-              key={exchange}
-              onClick={() => setSelectedExchangeFilter(exchange)}
-              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
-                selectedExchangeFilter === exchange
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                  : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-              }`}
-            >
-              {exchange === 'ALL' ? '🌍 Global Universe' : exchange}
-            </button>
-          ))}
-        </div>
+                {/* TIME ADJUSTMENT HUB */}
+                <div className="relative flex flex-col gap-3 rounded-2xl border border-slate-800/70 bg-slate-950/80 p-3 sm:min-w-[310px]">
+                  <div className="flex items-center justify-between gap-3">
+                    <button type="button" onClick={() => setIsCalendarOpen(!isCalendarOpen)} className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-left">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">Execution Date</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-100">{formatSelectedDate(calendarSelectionDate)}</p>
+                    </button>
+                    <button type="button" onClick={() => { confirmSelectedDate(); setIsCalendarOpen(false); }} className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-400 hover:bg-cyan-500/20">Enter</button>
+                  </div>
+
+                  {isCalendarOpen && (
+                    <div className="absolute right-0 top-full z-50 mt-2 w-full bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-2xl">
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg bg-slate-950 p-2 text-center">
+                            <span className="text-[10px] uppercase text-slate-500 block">Hours</span>
+                            <div className="flex justify-center gap-2 mt-1">
+                              <button onClick={() => updateTimeField('hour', -1)} className="text-slate-400 font-bold px-1">-</button>
+                              <span className="font-mono text-sm">{timeInputDraft.split(':')[0] || '00'}</span>
+                              <button onClick={() => updateTimeField('hour', 1)} className="text-slate-400 font-bold px-1">+</button>
+                            </div>
+                          </div>
+                          <div className="rounded-lg bg-slate-950 p-2 text-center">
+                            <span className="text-[10px] uppercase text-slate-500 block">Minutes</span>
+                            <div className="flex justify-center gap-2 mt-1">
+                              <button onClick={() => updateTimeField('minute', -1)} className="text-slate-400 font-bold px-1">-</button>
+                              <span className="font-mono text-sm">{timeInputDraft.split(':')[1] || '00'}</span>
+                              <button onClick={() => updateTimeField('minute', 1)} className="text-slate-400 font-bold px-1">+</button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
+                          {calendarDays.map((day, i) => day && (
+                            <button key={i} onClick={() => handleCalendarDateSelect(toDateInputValue(day))} className={`p-1 rounded ${toDateInputValue(day) === calendarSelectionDate ? 'bg-cyan-600 text-white' : 'hover:bg-slate-800'}`}>
+                              {day.getDate()}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* FINANCIAL SUMMARY ROW */}
+          <header className="border-b border-slate-800 pb-4 mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">ApexTrader Global</h1>
+                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${marketStatus.closed ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'}`}>{apiMode}</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Multi-Exchange Sandbox Environment supporting US, NSE, LSE, and TSE execution structures.</p>
+            </div>
+            <div className="text-left sm:text-right">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Combined Global Net Worth</span>
+              <div className="text-2xl md:text-3xl font-mono font-bold text-emerald-400">
+                ${netWorth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </header>
+        </section> {/* FIXED: Added closing tag for overview section */}
+
+        <section id="watchlist">
+          {/* REGIONAL EXCHANGE CONTROLS / FILTER HUB */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
+            {['ALL', 'US', 'India', 'Europe', 'Asia'].map((exchange) => (
+              <button
+                key={exchange}
+                onClick={() => setSelectedExchangeFilter(exchange)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  selectedExchangeFilter === exchange
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                {exchange === 'ALL' ? '🌍 Global Universe' : exchange}
+              </button>
+            ))}
+          </div>
+        </section> {/* FIXED: Added closing tag for watchlist section */}
 
         {/* METRICS METADATA ROW */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <p className="text-xs text-slate-400 font-medium">Fake Capital Holdings Balance</p>
-            <p className="text-xl font-mono font-semibold mt-1 text-slate-200">${cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <p className="text-xs text-slate-400 font-medium">Securities Value Under Management</p>
-            <p className="text-xl font-mono font-semibold mt-1 text-cyan-400">${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">Simulation Mode Toggle</p>
-              <button onClick={() => !marketStatus.closed && setIsManualSim(!isManualSim)} disabled={marketStatus.closed} className={`text-xs mt-1 px-2.5 py-1 rounded font-semibold border ${marketStatus.closed ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
-                {marketStatus.closed ? '🔒 Engine Paused' : isManualSim ? '⏸️ Sandbox Sim Active' : '⚡ Live Matrix'}
-              </button>
+        <section id="portfolio">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <p className="text-xs text-slate-400 font-medium">Fake Capital Holdings Balance</p>
+              <p className="text-xl font-mono font-semibold mt-1 text-slate-200">${cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
             </div>
-            <button onClick={() => fetchMarketData(null, true)} disabled={isManualSim || marketStatus.closed} className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold disabled:opacity-40 disabled:cursor-not-allowed">🔄 Sync API</button>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <p className="text-xs text-slate-400 font-medium">Securities Value Under Management</p>
+              <p className="text-xl font-mono font-semibold mt-1 text-cyan-400">${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center">
+              <div>
+                <p className="text-xs text-slate-400 font-medium">Simulation Mode Toggle</p>
+                <button onClick={() => !marketStatus.closed && setIsManualSim(!isManualSim)} disabled={marketStatus.closed} className={`text-xs mt-1 px-2.5 py-1 rounded font-semibold border ${marketStatus.closed ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
+                  {marketStatus.closed ? '🔒 Engine Paused' : isManualSim ? '⏸️ Sandbox Sim Active' : '⚡ Live Matrix'}
+                </button>
+              </div>
+              <button onClick={() => fetchMarketData(null, true)} disabled={isManualSim || marketStatus.closed} className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold disabled:opacity-40 disabled:cursor-not-allowed">🔄 Sync API</button>
+            </div>
           </div>
-        </div>
+        </section>
 
         {/* MAIN BODY LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -715,7 +745,7 @@ export default function App() {
             </div>
 
             {/* PORTFOLIO LIST */}
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
+            <section id="analytics" className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
               <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Your Position Portfolio</h2>
               {portfolio.length === 0 ? (
                 <p className="text-sm text-slate-500 py-4 text-center">No active stock holdings found. Expand your watchlist to begin.</p>
@@ -752,12 +782,12 @@ export default function App() {
                   </table>
                 </div>
               )}
-            </div>
+            </section>
 
           </div>
 
           {/* SIDEBAR: AI DIAGNOSTICS */}
-          <div className="space-y-4">
+          <section id="settings" className="space-y-4">
             <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 min-h-[300px]">
               <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
                 <span className="text-purple-400">💡</span>
@@ -784,7 +814,7 @@ export default function App() {
                 </div>
               )}
             </div>
-          </div>
+          </section>
         </div>
 
       </div>
