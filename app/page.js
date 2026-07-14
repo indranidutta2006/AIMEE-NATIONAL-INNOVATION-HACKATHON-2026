@@ -109,30 +109,32 @@ const getMarketHolidaysForYear = (year) => {
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
-  const parsedDate = new Date(`${value}T${timeValue}`);
-  if (Number.isNaN(parsedDate.getTime())) return true;
+  // 1. Split the string parts manually to ignore the local machine's timezone settings
+  const [yearStr, monthStr, dayStr] = value.split('-');
+  const [hourStr, minuteStr] = timeValue.split(':');
 
-  const nyFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: 'numeric', minute: 'numeric', hour12: false, weekday: 'short'
-  });
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10) - 1; // JS Months are 0-indexed (Jan = 0)
+  const day = parseInt(dayStr, 10);
+  const hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
 
-  const parts = nyFormatter.formatToParts(parsedDate).reduce((acc, part) => {
-    acc[part.type] = part.value;
-    return acc;
-  }, {});
-
-  if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return true;
-
-  const year = parseInt(parts.year, 10);
-  const marketHolidays = getMarketHolidaysForYear(year);
-  const normalizedDate = `${parts.year}-${parts.month}-${parts.day}`;
+  // 2. Treat the raw values as if they are already native New York Time parameters
+  // To verify weekends accurately, we instantiate a safe UTC representation of these exact numbers
+  const targetDate = new Date(Date.UTC(year, month, day, hour, minute));
   
+  // 3. Extract the correct day of the week component directly using the UTC index value
+  const dayOfWeek = targetDate.getUTCDay(); // 0 = Sunday, 6 = Saturday
+  if (dayOfWeek === 0 || dayOfWeek === 6) return true;
+
+  // 4. Check dynamic holiday sets against the targeted calendar tracking date
+  const marketHolidays = getMarketHolidaysForYear(year);
+  const normalizedDate = `${yearStr}-${monthStr}-${dayStr}`;
   if (marketHolidays.has(normalizedDate)) return true;
 
-  const minutes = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-  return minutes < 570 || minutes >= 960;
+  // 5. Enforce core trading floor schedule constraints (9:30 AM to 4:00 PM Eastern Time)
+  const totalMinutes = hour * 60 + minute;
+  return totalMinutes < 570 || totalMinutes >= 960;
 };
 
 const toNYDateInputValue = (date) => {
