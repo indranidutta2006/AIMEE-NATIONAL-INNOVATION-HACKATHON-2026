@@ -71,7 +71,7 @@ const getAdjustedTimeValue = (value, field, direction) => {
 
 export default function App() {
   // --- STATE MANAGEMENT ---
-  const [cash, setCash] = useState(100000.00); // Bumped core allocation up for global instruments
+  const [cash, setCash] = useState(100000.00); 
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [marketStocks, setMarketStocks] = useState({});
   const [selectedExchangeFilter, setSelectedExchangeFilter] = useState('ALL'); 
@@ -111,7 +111,7 @@ export default function App() {
     if (symbol.endsWith('.NSE') || symbol.endsWith('.BSE')) return 'India';
     if (symbol.endsWith('.LSE') || symbol.endsWith('.PA') || symbol.endsWith('.DE')) return 'Europe';
     if (symbol.endsWith('.T') || symbol.endsWith('.HK') || symbol.endsWith('.SS')) return 'Asia';
-    return 'US'; // Default fallback syntax
+    return 'US'; 
   };
 
   const formatSelectedDate = (value) => {
@@ -176,19 +176,6 @@ export default function App() {
     }
   };
 
-  const loadCache = () => {
-    try {
-      const cached = sessionStorage.getItem('apex_market_cache');
-      if (cached) {
-        const { timestamp, stocks } = JSON.parse(cached);
-        if (Date.now() - timestamp < 60000) return stocks;
-      }
-    } catch (e) {
-      console.warn(e);
-    }
-    return null;
-  };
-
   const parseTwelveDataQuotes = (data) => {
     if (!data || data.status === 'error' || data.code >= 400) return null;
     const parsed = {};
@@ -223,6 +210,13 @@ export default function App() {
   };
 
   const runSimulationTick = useCallback(() => {
+    // ENFORCEMENT: If market bounds fall outside hours, explicitly stop the simulation tick
+    if (isMarketClosedForDate(selectedDate, selectedTime)) {
+      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+      setApiMode('Closed Terminal');
+      return;
+    }
+
     setMarketStocks((prevStocks) => {
       const base = Object.keys(prevStocks).length > 0 ? prevStocks : BASELINE_STOCKS;
       const updated = { ...base };
@@ -238,12 +232,20 @@ export default function App() {
       });
       return updated;
     });
-  }, []);
+  }, [selectedDate, selectedTime]);
 
   const fetchMarketData = useCallback(async (forcedSymbols = null, bypassCache = false, dateOverride = null, timeOverride = null) => {
-    const symbolsToFetch = forcedSymbols || Array.from(new Set([...watchlist, ...portfolio.map(p => p.ticker)]));
     const selectedDateValue = dateOverride || selectedDate || getCurrentDateValue();
     const selectedTimeValue = timeOverride || selectedTime || getCurrentTimeValue();
+
+    // ENFORCEMENT: Block pipeline completely if outside operating metrics
+    if (isMarketClosedForDate(selectedDateValue, selectedTimeValue)) {
+      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+      setApiMode('Closed Terminal');
+      return;
+    }
+
+    const symbolsToFetch = forcedSymbols || Array.from(new Set([...watchlist, ...portfolio.map(p => p.ticker)]));
 
     if (isManualSim) {
       setApiMode('Simulation');
@@ -252,7 +254,6 @@ export default function App() {
       return;
     }
 
-    // Dynamic Route verification targeting backend Twelve Data Ingestor
     try {
       const response = await fetch(`/api/market-data?date=${encodeURIComponent(selectedDateValue)}&time=${encodeURIComponent(selectedTimeValue)}&symbols=${encodeURIComponent(symbolsToFetch.join(','))}`);
       const payload = await response.json();
@@ -282,11 +283,26 @@ export default function App() {
     }
   }, [watchlist, portfolio, runSimulationTick, isManualSim, selectedDate, selectedTime]);
 
+  // Synchronous Core Loop Initialization
   useEffect(() => {
     if (!mounted) return;
-    fetchMarketData();
+    
+    // Assess operational availability on state load 
+    if (isMarketClosedForDate(selectedDate, selectedTime)) {
+      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+      setApiMode('Closed Terminal');
+    } else {
+      fetchMarketData();
+    }
 
     const activeInterval = setInterval(() => {
+      // Re-evaluate boundaries at every clock tick segment
+      if (isMarketClosedForDate(selectedDate, selectedTime)) {
+        setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+        setApiMode('Closed Terminal');
+        return; 
+      }
+
       if (apiMode === 'TwelveData' && !isManualSim && rateLimitTimer === 0) {
         fetchMarketData(null, true);
       } else {
@@ -295,7 +311,7 @@ export default function App() {
     }, 15000);
 
     return () => clearInterval(activeInterval);
-  }, [mounted, fetchMarketData, apiMode, runSimulationTick, isManualSim, rateLimitTimer]);
+  }, [mounted, fetchMarketData, apiMode, runSimulationTick, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -343,6 +359,13 @@ export default function App() {
       return;
     }
 
+    // Early exit restriction if user attempts an ingestion expansion when market flags closed variables
+    if (isMarketClosedForDate(selectedDate, selectedTime)) {
+      triggerNotification('Terminal asset intake suspended: Market is Closed.', 'warning');
+      setSearchQuery('');
+      return;
+    }
+
     const apiKey = process.env.NEXT_PUBLIC_TWELVE_DATA_API_KEY;
 
     if (!apiKey || isManualSim) {
@@ -383,6 +406,7 @@ export default function App() {
   };
 
   const handleBuy = () => {
+    if (marketStatus.closed) return;
     const currentStock = marketStocks[selectedTicker];
     if (!currentStock) return;
     const totalCost = currentStock.price * tradeShares;
@@ -406,6 +430,7 @@ export default function App() {
   };
 
   const handleSell = () => {
+    if (marketStatus.closed) return;
     const currentStock = marketStocks[selectedTicker];
     if (!currentStock) return;
     const position = portfolio.find(p => p.ticker === selectedTicker);
@@ -435,6 +460,7 @@ export default function App() {
   };
 
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
+    if (marketStatus.closed) return 0; // Asset pricing drops if overall market displays closed attributes
     const currentPrice = marketStocks[curr.ticker]?.price || curr.avgBuyPrice;
     return acc + (curr.shares * currentPrice);
   }, 0);
@@ -442,7 +468,6 @@ export default function App() {
   const netWorth = cash + totalPortfolioValue;
   const calendarDays = getCalendarDays(calendarViewDate);
 
-  // Filter tickers depending on highlighted region tab
   const filteredWatchlist = watchlist.filter(ticker => {
     if (selectedExchangeFilter === 'ALL') return true;
     const stock = marketStocks[ticker];
@@ -463,6 +488,11 @@ export default function App() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Global Cross-Market Terminal</p>
               <h2 className="text-xl font-semibold text-slate-100">{formatSelectedDate(selectedDate)}</h2>
               <p className="text-sm text-slate-400">Extraction target: <span className="font-semibold text-slate-200">{formatSelectedDateTime(selectedDate, selectedTime)}</span></p>
+              {marketStatus.closed && (
+                <span className="mt-1 inline-block text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded animate-pulse">
+                  🛑 Operational Limit Reached: Market Closed
+                </span>
+              )}
             </div>
 
             {/* TIME ADJUSTMENT HUB */}
@@ -515,7 +545,7 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">ApexTrader Global</h1>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">{apiMode}</span>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${marketStatus.closed ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'}`}>{apiMode}</span>
             </div>
             <p className="text-xs text-slate-400 mt-1">Multi-Exchange Sandbox Environment supporting US, NSE, LSE, and TSE execution structures.</p>
           </div>
@@ -558,11 +588,11 @@ export default function App() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center">
             <div>
               <p className="text-xs text-slate-400 font-medium">Simulation Mode Toggle</p>
-              <button onClick={() => setIsManualSim(!isManualSim)} className="text-xs mt-1 px-2.5 py-1 rounded font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                {isManualSim ? '⏸️ Sandbox Sim Active' : '⚡ Live Matrix'}
+              <button onClick={() => !marketStatus.closed && setIsManualSim(!isManualSim)} disabled={marketStatus.closed} className={`text-xs mt-1 px-2.5 py-1 rounded font-semibold border ${marketStatus.closed ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
+                {marketStatus.closed ? '🔒 Engine Paused' : isManualSim ? '⏸️ Sandbox Sim Active' : '⚡ Live Matrix'}
               </button>
             </div>
-            <button onClick={() => fetchMarketData(null, true)} disabled={isManualSim} className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold">🔄 Sync API</button>
+            <button onClick={() => fetchMarketData(null, true)} disabled={isManualSim || marketStatus.closed} className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold disabled:opacity-40 disabled:cursor-not-allowed">🔄 Sync API</button>
           </div>
         </div>
 
@@ -583,12 +613,14 @@ export default function App() {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Add Ticker (e.g. INFY.NSE)"
-                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono w-full sm:w-48"
+                    disabled={marketStatus.closed}
+                    placeholder={marketStatus.closed ? "Market Closed" : "Add Ticker (e.g. INFY.NSE)"}
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono w-full sm:w-48 disabled:cursor-not-allowed disabled:bg-slate-900/40"
                   />
                   <button
                     type="submit"
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap"
+                    disabled={marketStatus.closed}
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
                   >
                     + Track
                   </button>
@@ -597,20 +629,17 @@ export default function App() {
 
               {/* Watchlist Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {watchlist.map((ticker) => {
+                {filteredWatchlist.map((ticker) => {
                   const stock = marketStocks[ticker];
-                  if (!stock) {
+                  if (!stock || marketStatus.closed) {
                     return (
-                      <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center animate-pulse">
-                        <span className="font-mono font-bold text-slate-500">{ticker}</span>
-                        <span className="text-xs text-slate-600 font-mono">Resolving...</span>
+                      <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center opacity-70">
+                        <span className="font-mono font-bold text-slate-400">{ticker}</span>
+                        <span className="text-xs text-slate-500 font-mono">--</span>
                       </div>
                     );
                   }
                   const isPositive = stock.change >= 0;
-                  const isClosedPrice = marketStatus.closed || stock.marketClosed || stock.price === null;
-                  const displayPrice = isClosedPrice ? '--' : `$${stock.price.toFixed(2)}`;
-                  const displayChange = isClosedPrice ? '--' : `${isPositive ? '+' : ''}${stock.change.toFixed(2)}%`;
                   return (
                     <div 
                       key={ticker} 
@@ -627,9 +656,9 @@ export default function App() {
                           <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{stock.name}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-mono font-bold text-base">{displayPrice}</p>
+                          <p className="font-mono font-bold text-base">${stock.price.toFixed(2)}</p>
                           <span className={`text-xs font-mono font-medium ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {displayChange}
+                            {isPositive ? '+' : ''}{stock.change.toFixed(2)}%
                           </span>
                         </div>
                       </div>
@@ -642,13 +671,13 @@ export default function App() {
             {/* TRANSACTION TERMINAL */}
             <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
               <h2 className="text-sm font-semibold text-slate-300 mb-4 uppercase tracking-wider">Simulated Execution Terminal</h2>
-              {marketStocks[selectedTicker] ? (
+              {marketStocks[selectedTicker] && !marketStatus.closed ? (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
                     <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
                     <span className="text-sm text-slate-300 ml-2 font-mono">
-                      @ {marketStatus.closed || marketStocks[selectedTicker].marketClosed || marketStocks[selectedTicker].price === null ? '--' : `$${marketStocks[selectedTicker].price.toFixed(2)}`}
+                      @ ${marketStocks[selectedTicker].price.toFixed(2)}
                     </span>
                   </div>
                   
@@ -666,22 +695,22 @@ export default function App() {
                   <div className="flex gap-2 w-full sm:w-auto">
                     <button 
                       onClick={handleBuy}
-                      disabled={marketStatus.closed}
-                      className={`flex-1 sm:flex-none font-semibold px-6 py-2 rounded-lg transition text-sm text-center ${marketStatus.closed ? 'cursor-not-allowed bg-slate-700 text-slate-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                      className="flex-1 sm:flex-none font-semibold bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
                     >
                       Buy Order
                     </button>
                     <button 
                       onClick={handleSell}
-                      disabled={marketStatus.closed}
-                      className={`flex-1 sm:flex-none font-semibold px-6 py-2 rounded-lg transition text-sm text-center ${marketStatus.closed ? 'cursor-not-allowed bg-slate-700 text-slate-400' : 'bg-rose-600 hover:bg-rose-500 text-white'}`}
+                      className="flex-1 sm:flex-none font-semibold bg-rose-600 hover:bg-rose-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
                     >
                       Sell Order
                     </button>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500 py-2">Select a symbol from your watchlist or add one above to access transaction fields.</p>
+                <p className="text-sm text-slate-500 py-2">
+                  {marketStatus.closed ? "Orders suspended. Terminal execution fields are locked outside market operational frameworks." : "Select a symbol from your watchlist to access transaction fields."}
+                </p>
               )}
             </div>
 
@@ -705,9 +734,8 @@ export default function App() {
                     <tbody className="divide-y divide-slate-800/60">
                       {portfolio.map((pos) => {
                         const currentPrice = marketStocks[pos.ticker]?.price;
-                        const displayPrice = marketStatus.closed || currentPrice === null || currentPrice === undefined ? '--' : `$${(currentPrice).toFixed(2)}`;
-                        const value = currentPrice === null || currentPrice === undefined ? 0 : pos.shares * currentPrice;
-                        const pnl = currentPrice === null || currentPrice === undefined ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
+                        const displayPrice = marketStatus.closed || !currentPrice ? '--' : `$${currentPrice.toFixed(2)}`;
+                        const pnl = marketStatus.closed || !currentPrice ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
                         return (
                           <tr key={pos.ticker} className="hover:bg-slate-800/30">
                             <td className="py-3 font-bold text-slate-200">{pos.ticker}</td>
@@ -749,8 +777,10 @@ export default function App() {
                 </div>
               ) : (
                 <div className="h-48 flex flex-col items-center justify-center text-center text-slate-500 text-xs p-4">
-                  <p>Telemetry Engine Online...</p>
-                  <p className="text-slate-600 mt-2">Realized cross-market exits failing baseline profitability thresholds automatically execute analytical loss post-mortems here.</p>
+                  <p>{marketStatus.closed ? "Terminal System Offline" : "Telemetry Engine Online..."}</p>
+                  <p className="text-slate-600 mt-2">
+                    {marketStatus.closed ? "Data ingestion pipelines are closed due to schedule limits. Adjust date settings above to simulate trading hours." : "Realized cross-market exits failing baseline profitability thresholds automatically execute analytical loss post-mortems here."}
+                  </p>
                 </div>
               )}
             </div>
