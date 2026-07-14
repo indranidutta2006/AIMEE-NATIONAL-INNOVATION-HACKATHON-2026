@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
+// Replaced DEFAULT_WATCHLIST with top 15 major global and Indian companies
 const TOP_15_COMPANIES = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
   'META', 'TSLA', 'BRK.A', 'V', 'JPM', 
   'INFY.NSE', 'TCS.NSE', 'RELIANCE.NSE', 'HDFCBANK.NSE', 'BARC.LSE'
 ];
 
+// Baseline fallback prices extended for structural safety
 const BASELINE_STOCKS = {
   'AAPL': { name: 'Apple Inc. (NASDAQ)', price: 175.00, change: 0.5, rsi: 72, volume: 'High', exchange: 'US' },
   'MSFT': { name: 'Microsoft Corp (NASDAQ)', price: 420.00, change: 1.1, rsi: 65, volume: 'High', exchange: 'US' },
@@ -153,6 +155,34 @@ const getInitialOpenDateValue = () => {
   return toNYDateInputValue(d);
 };
 
+const getCurrentDateValue = () => toNYDateInputValue(new Date());
+const getCurrentTimeValue = () => toNYTimeInputValue(new Date());
+
+const isValidTimeValue = (value) => {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return false;
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+};
+
+const normalizeTimeValue = (value) => {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+  if (!digits) return '00:00';
+  
+  if (digits.length <= 2) {
+    const parsedHours = Number.parseInt(digits, 10) || 0;
+    const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
+    return `${hours}:00`;
+  }
+  
+  const parsedHours = Number.parseInt(digits.slice(0, 2), 10) || 0;
+  const parsedMinutes = Number.parseInt(digits.slice(2, 4), 10) || 0;
+  
+  const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
+  const minutes = String(Math.min(59, Math.max(0, parsedMinutes))).padStart(2, '0');
+  
+  return `${hours}:${minutes}`;
+};
+
 const getAdjustedTimeValue = (value, field, direction) => {
   const [hours, minutes] = value.split(':').map(Number);
   const next = new Date(2000, 0, 1, hours, minutes);
@@ -161,18 +191,19 @@ const getAdjustedTimeValue = (value, field, direction) => {
   return toNYTimeInputValue(next);
 };
 
+// Pure, zero-dependency client chart engine to mock linear time-series paths seamlessly
 function IntradayLineChart({ basePrice, ticker, isPositive }) {
   const containerRef = useRef(null);
   const [hoverData, setHoverData] = useState(null);
   const [chartPoints, setChartPoints] = useState([]);
 
+  // Generate an array of 40 stable linear coordinates representing a 9:30 - 16:00 trading matrix
   useEffect(() => {
-    if (basePrice === undefined || basePrice === null) return;
-    
     let currentPrice = basePrice * 0.99;
     const items = [];
     const seed = ticker.charCodeAt(0) + ticker.charCodeAt(ticker.length - 1);
     
+    // Deterministic random walk sequence generator based on stock ticker identity
     const pseudoRandom = (index) => {
       const x = Math.sin(seed + index) * 10000;
       return x - Math.floor(x);
@@ -191,15 +222,17 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
     setHoverData(null);
   }, [basePrice, ticker]);
 
-  if (chartPoints.length === 0 || basePrice === undefined) return null;
+  if (chartPoints.length === 0) return null;
 
   const minVal = Math.min(...chartPoints.map(p => p.val));
   const maxVal = Math.max(...chartPoints.map(p => p.val));
   const marginRange = maxVal - minVal === 0 ? 1 : maxVal - minVal;
 
+  // Chart viewbox boundaries
   const width = 600;
   const height = 240;
 
+  // Generate SVG Coordinate String
   const svgPoints = chartPoints.map((p, idx) => {
     const x = (idx / (chartPoints.length - 1)) * (width - 40) + 20;
     const y = height - 20 - ((p.val - minVal) / marginRange) * (height - 40);
@@ -234,6 +267,7 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
 
   return (
     <div className="relative w-full bg-slate-950 rounded-xl p-3 border border-slate-800/80" ref={containerRef}>
+      {/* Dynamic Hover Tooltip Tracker Overlay */}
       <div className="absolute top-2 left-3 h-8 flex gap-6 text-xs text-slate-400 font-mono">
         <div>Time Frame: <span className="text-slate-100 font-bold">{hoverData ? hoverData.time : '09:30 - 16:00'}</span></div>
         <div>Indexed Spot: <span className={`${isPositive ? 'text-emerald-400' : 'text-rose-400'} font-bold`}>${hoverData ? hoverData.price.toFixed(2) : basePrice.toFixed(2)}</span></div>
@@ -256,13 +290,18 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
           </linearGradient>
         </defs>
 
+        {/* Grid Background Lines */}
         <line x1="20" y1="20" x2={width - 20} y2="20" stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
         <line x1="20" y1={height / 2} x2={width - 20} y2={height / 2} stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
         <line x1="20" y1={height - 20} x2={width - 20} y2={height - 20} stroke="#334155" strokeWidth="1"/>
 
+        {/* Shaded Price Area under path */}
         <path d={areaPath} fill={fillColor} />
+
+        {/* Core Line Trace */}
         <path d={linePath} fill="none" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
+        {/* Crosshair Tracking Indicators */}
         {hoverData && (
           <>
             <line x1={hoverData.cx} y1="20" x2={hoverData.cx} y2={height - 20} stroke="#475569" strokeWidth="1" strokeDasharray="2 2" />
@@ -279,7 +318,7 @@ export default function App() {
   const [cash, setCash] = useState(100000.00); 
   const [cashInput, setCashInput] = useState("100000.00"); 
   const [watchlist, setWatchlist] = useState(TOP_15_COMPANIES); 
-  const [marketStocks, setMarketStocks] = useState(() => BASELINE_STOCKS);
+  const [marketStocks, setMarketStocks] = useState({});
   const [selectedExchangeFilter, setSelectedExchangeFilter] = useState('ALL'); 
   const [portfolio, setPortfolio] = useState([
     { ticker: 'AAPL', shares: 10, avgBuyPrice: 185.00 }, 
@@ -299,16 +338,20 @@ export default function App() {
   const [mounted, setMounted] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
+  // Initialized states to look at standard active market hours (10:00 AM NY Time)
   const [selectedDate, setSelectedDate] = useState(() => getInitialOpenDateValue());
   const [selectedTime, setSelectedTime] = useState(() => "10:00");
   const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getInitialOpenDateValue());
   const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => "10:00");
   const [timeInputDraft, setTimeInputDraft] = useState(() => "10:00");
   
+  const [timeInputError, setTimeInputError] = useState('');
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState({ closed: false, message: '' });
   const [lastExtractedAt, setLastExtractedAt] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [marketRegion, setMarketRegion] = useState('US');
   const [activeMenuItem, setActiveMenuItem] = useState('Overview');
   const dashboardMenuItems = ['Overview', 'Watchlist', 'Portfolio', 'Analytics', 'Settings'];
   const playbackClockRef = useRef(new Date());
@@ -333,6 +376,11 @@ export default function App() {
     if (!value) return 'No date selected';
     const parsedDate = new Date(`${value}T12:00:00`);
     return parsedDate.toLocaleDateString('en', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  const formatTimestamp = (value) => {
+    if (!value) return 'Awaiting market extraction';
+    return `${value.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })} on ${value.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   const formatSelectedDateTime = (dateValue, timeValue) => {
@@ -434,10 +482,13 @@ export default function App() {
     }
 
     setMarketStocks((prevStocks) => {
-      const updated = { ...prevStocks };
+      const base = Object.keys(prevStocks).length > 0 ? prevStocks : BASELINE_STOCKS;
+      const updated = { ...base };
       
       Object.keys(updated).forEach((ticker) => {
-        if (!updated[ticker]) return;
+        if (!updated[ticker]) {
+          updated[ticker] = { name: `${ticker} Instrument`, price: 250.00, change: 0, rsi: 50, volume: 'Normal', exchange: detectExchangeRegion(ticker) };
+        }
         const percentChange = (Math.random() * 1.6 - 0.8) / 100;
         updated[ticker].price = Math.max(1, +(updated[ticker].price * (1 + percentChange)).toFixed(2));
         updated[ticker].change = +(updated[ticker].change + percentChange * 10).toFixed(2);
@@ -449,7 +500,7 @@ export default function App() {
 
   const runSimulationTickMemoized = useCallback(() => {
     runSimulationTick.current();
-  }, []);
+  }, [selectedDate, selectedTime]);
 
   const fetchMarketData = useCallback(async (forcedSymbols = null, bypassCache = false, dateOverride = null, timeOverride = null) => {
     const selectedDateValue = dateOverride || selectedDate;
@@ -474,7 +525,7 @@ export default function App() {
       const response = await fetch(`/api/market-data?date=${encodeURIComponent(selectedDateValue)}&time=${encodeURIComponent(selectedTimeValue)}&symbols=${encodeURIComponent(symbolsToFetch.join(','))}`);
       const payload = await response.json();
 
-      if (payload && payload.stocks) {
+      if (payload.stocks) {
         const structuralMap = {};
         Object.keys(payload.stocks).forEach(sym => {
           structuralMap[sym] = {
@@ -487,19 +538,15 @@ export default function App() {
         saveCache(structuralMap);
         setApiMode('TwelveData');
         setApiError(null);
+      } else {
+        runSimulationTickMemoized();
       }
       setLastExtractedAt(new Date());
     } catch (err) {
-      setApiMode('Simulation (Pipeline Issue)');
-      setApiError('Ingestion limit reached. Utilizing cached parameters.');
+      setApiMode('Simulation');
+      setApiError('Ingestion limit / Pipeline issue. Local simulation backup engaged.');
+      runSimulationTickMemoized();
       setLastExtractedAt(new Date());
-      
-      setMarketStocks((prevStocks) => {
-        if (prevStocks && Object.keys(prevStocks).length > 0) {
-          return { ...prevStocks };
-        }
-        return { ...BASELINE_STOCKS };
-      });
     }
   }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
 
@@ -521,15 +568,15 @@ export default function App() {
         return; 
       }
 
-      if (!isManualSim && rateLimitTimer === 0) {
+      if (apiMode === 'TwelveData' && !isManualSim && rateLimitTimer === 0) {
         fetchMarketData(null, true);
-      } else if (isManualSim) {
+      } else {
         runSimulationTickMemoized();
       }
     }, 15000);
 
     return () => clearInterval(activeInterval);
-  }, [mounted, fetchMarketData, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
+  }, [mounted, fetchMarketData, apiMode, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -629,7 +676,7 @@ export default function App() {
 
   const handleBuy = () => {
     if (marketStatus.closed) return;
-    const currentStock = marketStocks[selectedTicker];
+    const currentStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
     if (!currentStock) return;
     const totalCost = currentStock.price * tradeShares;
 
@@ -655,7 +702,7 @@ export default function App() {
 
   const handleSell = () => {
     if (marketStatus.closed) return;
-    const currentStock = marketStocks[selectedTicker];
+    const currentStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
     if (!currentStock) return;
     const position = portfolio.find(p => p.ticker === selectedTicker);
 
@@ -672,7 +719,7 @@ export default function App() {
         dropPct,
         buyPrice: position.avgBuyPrice,
         sellPrice: currentStock.price,
-        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange} theater impacted this position exit.`]
+        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange || detectExchangeRegion(selectedTicker)} theater impacted this position exit.`]
       });
     }
 
@@ -687,8 +734,8 @@ export default function App() {
 
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
     if (marketStatus.closed) return 0; 
-    const currentPrice = marketStocks[curr.ticker]?.price;
-    return acc + (curr.shares * (currentPrice || curr.avgBuyPrice));
+    const currentPrice = marketStocks[curr.ticker]?.price || BASELINE_STOCKS[curr.ticker]?.price || curr.avgBuyPrice;
+    return acc + (curr.shares * currentPrice);
   }, 0);
 
   const netWorth = cash + totalPortfolioValue;
@@ -696,31 +743,17 @@ export default function App() {
 
   const filteredWatchlist = watchlist.filter(ticker => {
     if (selectedExchangeFilter === 'ALL') return true;
-    const stock = marketStocks[ticker];
+    const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
     const region = stock?.exchange || detectExchangeRegion(ticker);
     return region === selectedExchangeFilter;
   });
 
-  // Extract explicit lists for standalone parallel summaries
-  const usStocksList = watchlist.filter(t => (marketStocks[t]?.exchange || detectExchangeRegion(t)) === 'US');
-  const indiaStocksList = watchlist.filter(t => (marketStocks[t]?.exchange || detectExchangeRegion(t)) === 'India');
-
-  const activeStock = marketStocks[selectedTicker];
+  const activeStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
 
   if (!mounted) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">Loading Global Ingestion Matrix...</div>;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6 font-sans">
-      {feedbackMsg && (
-        <div className={`fixed bottom-4 right-4 z-50 rounded-xl border p-4 shadow-2xl backdrop-blur ${
-          feedbackMsg.type === 'success' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' :
-          feedbackMsg.type === 'warning' ? 'bg-amber-500/10 border-amber-500 text-amber-400' :
-          'bg-cyan-500/10 border-cyan-500 text-cyan-400'
-        }`}>
-          {feedbackMsg.text}
-        </div>
-      )}
-
       <div className="max-w-7xl mx-auto space-y-6">
         
         <section id="overview">
@@ -775,6 +808,7 @@ export default function App() {
 
                   {isCalendarOpen && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
+                      {/* Month & Year Navigation Control Bar */}
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                         <button 
                           type="button"
@@ -801,10 +835,12 @@ export default function App() {
                         </button>
                       </div>
 
+                      {/* Day Names Grid Header Array */}
                       <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase select-none">
                         <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
                       </div>
 
+                      {/* Dynamic Days Grid Blocks */}
                       <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
                         {calendarDays.map((day, i) => {
                           if (!day) {
@@ -834,6 +870,7 @@ export default function App() {
                         })}
                       </div>
 
+                      {/* Compact Time Increment Section */}
                       <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
                         <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
                           <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
@@ -876,53 +913,6 @@ export default function App() {
           </header>
         </section>
 
-        {/* --- REGIONAL MARKET HEADERS SECTION (US & INDIA SIDE-BY-SIDE SUMMARY) --- */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-3">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-2">
-                <span>🇺🇸</span> US Market Index Feed
-              </h3>
-              <span className="text-[10px] font-mono text-slate-500">TwelveData Free Tier</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {usStocksList.slice(0, 4).map(ticker => {
-                const stock = marketStocks[ticker];
-                return (
-                  <div key={ticker} onClick={() => setSelectedTicker(ticker)} className="bg-slate-950/60 p-2 rounded border border-slate-800/60 cursor-pointer hover:border-slate-700 flex justify-between items-center">
-                    <span className="font-mono text-xs font-bold text-slate-300">{ticker}</span>
-                    <span className={`text-xs font-mono font-bold ${stock?.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      ${stock ? stock.price.toFixed(1) : '--'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-3">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-2">
-                <span>🇮🇳</span> Indian Market Hub (NSE)
-              </h3>
-              <span className="text-[10px] font-mono text-slate-500">TwelveData Free Tier (.NSE)</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {indiaStocksList.map(ticker => {
-                const stock = marketStocks[ticker];
-                return (
-                  <div key={ticker} onClick={() => setSelectedTicker(ticker)} className="bg-slate-950/60 p-2 rounded border border-slate-800/60 cursor-pointer hover:border-slate-700 flex justify-between items-center">
-                    <span className="font-mono text-xs font-bold text-slate-300">{ticker.split('.')[0]}</span>
-                    <span className={`text-xs font-mono font-bold ${stock?.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      ₹{stock ? stock.price.toFixed(1) : '--'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
         <section id="watchlist">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
@@ -936,12 +926,13 @@ export default function App() {
                     : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
                 }`}
               >
-                {exchange === 'ALL' ? '🌍 Global Universe' : exchange === 'India' ? '🇮🇳 India Market' : exchange}
+                {exchange === 'ALL' ? '🌍 Global Universe' : exchange}
               </button>
             ))}
           </div>
         </section>
 
+        {/* METRICS METADATA ROW WITH CASH ENTRY FUNCTIONALITY */}
         <section id="portfolio">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
@@ -1001,7 +992,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {filteredWatchlist.map((ticker) => {
-                  const stock = marketStocks[ticker];
+                  const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
                   if (!stock || marketStatus.closed) {
                     return (
                       <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center opacity-70">
@@ -1011,7 +1002,6 @@ export default function App() {
                     );
                   }
                   const isPositive = stock.change >= 0;
-                  const isIndia = stock.exchange === 'India';
                   return (
                     <div 
                       key={ticker} 
@@ -1024,16 +1014,11 @@ export default function App() {
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <span className="font-mono font-bold text-lg flex items-center gap-1.5">
-                            {ticker}
-                            {isIndia && <span className="text-[10px] bg-orange-500/10 text-orange-400 px-1.5 py-0.2 rounded border border-orange-500/20">NSE</span>}
-                          </span>
+                          <span className="font-mono font-bold text-lg">{ticker}</span>
                           <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{stock.name}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-mono font-bold text-base">
-                            {isIndia ? '₹' : '$'}{stock.price.toFixed(2)}
-                          </p>
+                          <p className="font-mono font-bold text-base">${stock.price.toFixed(2)}</p>
                           <span className={`text-xs font-mono font-medium ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {isPositive ? '+' : ''}{stock.change.toFixed(2)}%
                           </span>
@@ -1045,6 +1030,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* UPGRADED INTRADAY PRICE TELEMETRY STREAM CHART PANEL */}
             {activeStock && !marketStatus.closed ? (
               <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 space-y-4 animate-fadeIn">
                 <div>
@@ -1057,24 +1043,26 @@ export default function App() {
                   </p>
                 </div>
 
+                {/* Inline SVG Chart Implementation */}
                 <IntradayLineChart 
                   ticker={selectedTicker} 
                   basePrice={activeStock.price} 
                   isPositive={activeStock.change >= 0} 
                 />
 
+                {/* Performance Metric Footer Badges */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
-                    <span className="text-slate-200 font-semibold">{activeStock.exchange === 'India' ? '₹' : '$'}{(activeStock.price * 0.995).toFixed(2)}</span>
+                    <span className="text-slate-200 font-semibold">${(activeStock.price * 0.995).toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Intraday Apex</span>
-                    <span className="text-emerald-400 font-semibold">{activeStock.exchange === 'India' ? '₹' : '$'}{(activeStock.price * 1.012).toFixed(2)}</span>
+                    <span className="text-emerald-400 font-semibold">${(activeStock.price * 1.012).toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Intraday Trough</span>
-                    <span className="text-rose-400 font-semibold">{activeStock.exchange === 'India' ? '₹' : '$'}{(activeStock.price * 0.984).toFixed(2)}</span>
+                    <span className="text-rose-400 font-semibold">${(activeStock.price * 0.984).toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Relative Strength (RSI)</span>
@@ -1092,7 +1080,7 @@ export default function App() {
                     <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
                     <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
                     <span className="text-sm text-slate-300 ml-2 font-mono">
-                      @ {activeStock.exchange === 'India' ? '₹' : '$'}{activeStock.price.toFixed(2)}
+                      @ ${activeStock.price.toFixed(2)}
                     </span>
                   </div>
                   
@@ -1147,15 +1135,14 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
                       {portfolio.map((pos) => {
-                        const currentPrice = marketStocks[pos.ticker]?.price;
-                        const isInd = marketStocks[pos.ticker]?.exchange === 'India';
-                        const displayPrice = marketStatus.closed || !currentPrice ? '--' : `${isInd ? '₹' : '$'}${currentPrice.toFixed(2)}`;
+                        const currentPrice = marketStocks[pos.ticker]?.price || BASELINE_STOCKS[pos.ticker]?.price;
+                        const displayPrice = marketStatus.closed || !currentPrice ? '--' : `$${currentPrice.toFixed(2)}`;
                         const pnl = marketStatus.closed || !currentPrice ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
                         return (
                           <tr key={pos.ticker} className="hover:bg-slate-800/30">
                             <td className="py-3 font-bold text-slate-200">{pos.ticker}</td>
                             <td className="py-3 text-slate-300">{pos.shares}</td>
-                            <td className="py-3 text-slate-400">{isInd ? '₹' : '$'}{pos.avgBuyPrice.toFixed(2)}</td>
+                            <td className="py-3 text-slate-400">${pos.avgBuyPrice.toFixed(2)}</td>
                             <td className="py-3 font-semibold text-slate-200">{displayPrice}</td>
                             <td className={`py-3 text-right font-bold ${pnl !== null && pnl >= 0 ? 'text-emerald-400' : pnl !== null ? 'text-rose-400' : 'text-slate-400'}`}>
                               {pnl === null ? '--' : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`}
