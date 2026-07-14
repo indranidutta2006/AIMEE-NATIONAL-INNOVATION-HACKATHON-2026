@@ -373,25 +373,37 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!mounted) return;
-    localStorage.setItem('apex_cash', cash.toString());
-    localStorage.setItem('apex_portfolio', JSON.stringify(portfolio));
-    localStorage.setItem('apex_watchlist', JSON.stringify(watchlist));
-  }, [cash, portfolio, watchlist, mounted]);
+  if (!mounted) return;
+  
+  if (isMarketClosedForDate(selectedDate, selectedTime)) {
+    setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+    setApiMode('Closed Terminal');
+  } else {
+    setMarketStatus({ closed: false, message: '' });
+    fetchMarketData();
+  }
 
-  const triggerNotification = (message, type = 'info') => {
-    setFeedbackMsg({ text: message, type });
-    setTimeout(() => setFeedbackMsg(null), 5000);
-  };
-
-  const saveCache = (data) => {
-    try {
-      const cacheObj = { timestamp: Date.now(), stocks: data };
-      sessionStorage.setItem('apex_market_cache', JSON.stringify(cacheObj));
-    } catch (e) {
-      console.warn(e);
+  const activeInterval = setInterval(() => {
+    if (isMarketClosedForDate(selectedDate, selectedTime)) {
+      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+      setApiMode('Closed Terminal');
+      return; 
     }
-  };
+
+    // ONLY fetch or simulate if we aren't trapped in a pipeline error state
+    if (!isManualSim && rateLimitTimer === 0) {
+      // If we are already in an error state, don't keep hammering the API or drifting text; lock it down.
+      if (apiMode !== 'Simulation (Pipeline Issue)') {
+        fetchMarketData(null, true);
+      }
+    } else if (isManualSim) {
+      // Only execute random drift if the user explicitly turned on the Sandbox Sim Toggle
+      runSimulationTickMemoized();
+    }
+  }, 15000);
+
+  return () => clearInterval(activeInterval);
+}, [mounted, fetchMarketData, apiMode, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
 
   const parseTwelveDataQuotes = (data) => {
     if (!data || data.status === 'error' || data.code >= 400) return null;
