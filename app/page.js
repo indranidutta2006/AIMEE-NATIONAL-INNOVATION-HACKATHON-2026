@@ -2,18 +2,32 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-// Default global watchlist containing multi-exchange assets
-const DEFAULT_WATCHLIST = ['AAPL', 'INFY.NSE', 'BARC.LSE', '7203.T'];
+// Replaced DEFAULT_WATCHLIST with top 15 major global and Indian companies
+const TOP_15_COMPANIES = [
+  'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
+  'META', 'TSLA', 'BRK.A', 'V', 'JPM', 
+  'INFY.NSE', 'TCS.NSE', 'RELIANCE.NSE', 'HDFCBANK.NSE', 'BARC.LSE'
+];
 
-// Baseline fallback prices
+// Baseline fallback prices extended for structural safety
 const BASELINE_STOCKS = {
   'AAPL': { name: 'Apple Inc. (NASDAQ)', price: 175.00, change: 0.5, rsi: 72, volume: 'High', exchange: 'US' },
+  'MSFT': { name: 'Microsoft Corp (NASDAQ)', price: 420.00, change: 1.1, rsi: 65, volume: 'High', exchange: 'US' },
+  'GOOGL': { name: 'Alphabet Inc. (NASDAQ)', price: 170.00, change: -0.4, rsi: 48, volume: 'Normal', exchange: 'US' },
+  'AMZN': { name: 'Amazon.com Inc (NASDAQ)', price: 180.00, change: 0.8, rsi: 55, volume: 'High', exchange: 'US' },
+  'NVDA': { name: 'NVIDIA Corp (NASDAQ)', price: 850.00, change: 3.2, rsi: 78, volume: 'Extreme', exchange: 'US' },
+  'META': { name: 'Meta Platforms (NASDAQ)', price: 490.00, change: -1.5, rsi: 42, volume: 'Normal', exchange: 'US' },
+  'TSLA': { name: 'Tesla Inc (NASDAQ)', price: 175.00, change: -2.0, rsi: 35, volume: 'High', exchange: 'US' },
+  'BRK.A': { name: 'Berkshire Hathaway (NYSE)', price: 610000.00, change: 0.1, rsi: 50, volume: 'Low', exchange: 'US' },
+  'V': { name: 'Visa Inc. (NYSE)', price: 275.00, change: 0.3, rsi: 52, volume: 'Normal', exchange: 'US' },
+  'JPM': { name: 'JPMorgan Chase & Co (NYSE)', price: 195.00, change: 0.6, rsi: 58, volume: 'Normal', exchange: 'US' },
   'INFY.NSE': { name: 'Infosys Limited (NSE)', price: 1420.00, change: -1.2, rsi: 38, volume: 'Extreme', exchange: 'India' },
-  'BARC.LSE': { name: 'Barclays PLC (LSE)', price: 185.00, change: 2.4, rsi: 81, volume: 'Normal', exchange: 'Europe' },
-  '7203.T': { name: 'Toyota Motor Corp (TSE)', price: 3400.00, change: -0.3, rsi: 48, volume: 'Low', exchange: 'Asia' },
+  'TCS.NSE': { name: 'Tata Consultancy Services (NSE)', price: 3900.00, change: 0.4, rsi: 51, volume: 'Normal', exchange: 'India' },
+  'RELIANCE.NSE': { name: 'Reliance Industries (NSE)', price: 2950.00, change: 1.5, rsi: 63, volume: 'High', exchange: 'India' },
+  'HDFCBANK.NSE': { name: 'HDFC Bank Ltd (NSE)', price: 1510.00, change: -0.8, rsi: 44, volume: 'High', exchange: 'India' },
+  'BARC.LSE': { name: 'Barclays PLC (LSE)', price: 185.00, change: 2.4, rsi: 81, volume: 'Normal', exchange: 'Europe' }
 };
 
-// A cache to ensure we only calculate a year's holidays ONCE across the app lifecycle
 const holidayCache = new Map();
 
 // --- HELPER FUNCTIONS ---
@@ -73,16 +87,16 @@ const getMarketHolidaysForYear = (year) => {
   }
 
   const holidays = [
-    getObservedDate(new Date(Date.UTC(year, 0, 1))),   // New Year's Day
-    getNthWeekdayOfMonth(year, 0, 1, 3),              // MLK Jr. Day (3rd Monday)
-    getNthWeekdayOfMonth(year, 1, 1, 3),              // Presidents' Day (3rd Monday)
-    getGoodFriday(year),                              // Good Friday
-    getLastWeekdayOfMonth(year, 4, 1),                // Memorial Day (Last Monday)
-    getObservedDate(new Date(Date.UTC(year, 5, 19))), // Juneteenth
-    getObservedDate(new Date(Date.UTC(year, 6, 4))),  // Independence Day
-    getNthWeekdayOfMonth(year, 8, 1, 1),              // Labor Day (1st Monday)
-    getNthWeekdayOfMonth(year, 10, 4, 4),             // FIXED: Thanksgiving (4th Thursday)
-    getObservedDate(new Date(Date.UTC(year, 11, 25))),// Christmas Day
+    getObservedDate(new Date(Date.UTC(year, 0, 1))),
+    getNthWeekdayOfMonth(year, 0, 1, 3),
+    getNthWeekdayOfMonth(year, 1, 1, 3),
+    getGoodFriday(year),
+    getLastWeekdayOfMonth(year, 4, 1),
+    getObservedDate(new Date(Date.UTC(year, 5, 19))),
+    getObservedDate(new Date(Date.UTC(year, 6, 4))),
+    getNthWeekdayOfMonth(year, 8, 1, 1),
+    getNthWeekdayOfMonth(year, 10, 4, 4),
+    getObservedDate(new Date(Date.UTC(year, 11, 25))),
   ];
 
   const holidaySet = new Set(holidays.map(d => d.toISOString().split('T')[0]));
@@ -95,7 +109,6 @@ const getMarketHolidaysForYear = (year) => {
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
-  // Force JS to parse the string cleanly as a baseline representation
   const parsedDate = new Date(`${value}T${timeValue}`);
   if (Number.isNaN(parsedDate.getTime())) return true;
 
@@ -110,17 +123,14 @@ const isMarketClosedForDate = (value, timeValue = '12:00') => {
     return acc;
   }, {});
 
-  // 1. Weekend Check
   if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return true;
 
-  // 2. Dynamic Holiday Check
   const year = parseInt(parts.year, 10);
   const marketHolidays = getMarketHolidaysForYear(year);
   const normalizedDate = `${parts.year}-${parts.month}-${parts.day}`;
   
   if (marketHolidays.has(normalizedDate)) return true;
 
-  // 3. Core Market Hours Check (9:30 AM to 4:00 PM Eastern)
   const minutes = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
   return minutes < 570 || minutes >= 960;
 };
@@ -176,13 +186,14 @@ const getAdjustedTimeValue = (value, field, direction) => {
   const next = new Date(2000, 0, 1, hours, minutes);
   next.setMinutes(next.getMinutes() + (field === 'minute' ? direction * 1 : 0));
   next.setHours(next.getHours() + (field === 'hour' ? direction * 1 : 0));
-  return toNYTimeInputValue(next); // FIXED reference
+  return toNYTimeInputValue(next);
 };
 
 export default function App() {
   // --- STATE MANAGEMENT ---
   const [cash, setCash] = useState(100000.00); 
-  const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
+  const [cashInput, setCashInput] = useState("100000.00"); // Dynamic buffer variable for text/number fields
+  const [watchlist, setWatchlist] = useState(TOP_15_COMPANIES); // Seeded with top 15 list instead of 4
   const [marketStocks, setMarketStocks] = useState({});
   const [selectedExchangeFilter, setSelectedExchangeFilter] = useState('ALL'); 
   const [portfolio, setPortfolio] = useState([
@@ -269,7 +280,10 @@ export default function App() {
     const savedCash = localStorage.getItem('apex_cash');
     const savedPortfolio = localStorage.getItem('apex_portfolio');
     const savedWatchlist = localStorage.getItem('apex_watchlist');
-    if (savedCash) setCash(parseFloat(savedCash));
+    if (savedCash) {
+      setCash(parseFloat(savedCash));
+      setCashInput(savedCash);
+    }
     if (savedPortfolio) setPortfolio(JSON.parse(savedPortfolio));
     if (savedWatchlist) setWatchlist(JSON.parse(savedWatchlist));
   }, []);
@@ -455,6 +469,15 @@ export default function App() {
     setTimeInputDraft(nextTime);
   };
 
+  // Safe handler to sync typed string numerical states back to float variables
+  const handleCashUpdate = (val) => {
+    setCashInput(val);
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed >= 0) {
+      setCash(parsed);
+    }
+  };
+
   const handleAddTicker = async (e) => {
     e.preventDefault();
     const symbol = searchQuery.toUpperCase().trim();
@@ -522,7 +545,9 @@ export default function App() {
       return;
     }
 
-    setCash(prev => prev - totalCost);
+    const nextCash = cash - totalCost;
+    setCash(nextCash);
+    setCashInput(nextCash.toFixed(2));
     setPortfolio(prevPortfolio => {
       const existing = prevPortfolio.find(p => p.ticker === selectedTicker);
       if (existing) {
@@ -558,7 +583,9 @@ export default function App() {
       });
     }
 
-    setCash(prev => prev + totalCredit);
+    const nextCash = cash + totalCredit;
+    setCash(nextCash);
+    setCashInput(nextCash.toFixed(2));
     setPortfolio(prevPortfolio => {
       return prevPortfolio.map(p => p.ticker === selectedTicker ? { ...p, shares: p.shares - tradeShares } : p).filter(p => p.shares > 0);
     });
@@ -615,7 +642,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* FIXED STICKER TOP CONTROL BLOCK (DUPLICATIONS DELETED HERE) */}
             <div className="sticky top-[92px] z-40 rounded-2xl border border-cyan-500/20 bg-slate-900/95 p-4 shadow-2xl backdrop-blur">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -629,7 +655,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* TIME ADJUSTMENT HUB */}
                 <div className="relative flex flex-col gap-3 rounded-2xl border border-slate-800/70 bg-slate-950/80 p-3 sm:min-w-[310px]">
                   <div className="flex items-center justify-between gap-3">
                     <button type="button" onClick={() => setIsCalendarOpen(!isCalendarOpen)} className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-left">
@@ -662,7 +687,7 @@ export default function App() {
                         </div>
                         <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
                           {calendarDays.map((day, i) => day && (
-                            <button key={i} onClick={() => handleCalendarDateSelect(toDateInputValue(day))} className={`p-1 rounded ${toDateInputValue(day) === calendarSelectionDate ? 'bg-cyan-600 text-white' : 'hover:bg-slate-800'}`}>
+                            <button key={i} onClick={() => handleCalendarDateSelect(toNYDateInputValue(day))} className={`p-1 rounded ${toNYDateInputValue(day) === calendarSelectionDate ? 'bg-cyan-600 text-white' : 'hover:bg-slate-800'}`}>
                               {day.getDate()}
                             </button>
                           ))}
@@ -675,7 +700,6 @@ export default function App() {
             </div>
           </div>
           
-          {/* FINANCIAL SUMMARY ROW */}
           <header className="border-b border-slate-800 pb-4 mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <div className="flex items-center gap-2">
@@ -691,10 +715,9 @@ export default function App() {
               </div>
             </div>
           </header>
-        </section> {/* FIXED: Added closing tag for overview section */}
+        </section>
 
         <section id="watchlist">
-          {/* REGIONAL EXCHANGE CONTROLS / FILTER HUB */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
             {['ALL', 'US', 'India', 'Europe', 'Asia'].map((exchange) => (
@@ -711,18 +734,28 @@ export default function App() {
               </button>
             ))}
           </div>
-        </section> {/* FIXED: Added closing tag for watchlist section */}
+        </section>
 
-        {/* METRICS METADATA ROW */}
+        {/* METRICS METADATA ROW WITH CASH ENTRY FUNCTIONALITY */}
         <section id="portfolio">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-xs text-slate-400 font-medium">Fake Capital Holdings Balance</p>
-              <p className="text-xl font-mono font-semibold mt-1 text-slate-200">${cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+              <label htmlFor="cash-editor-input" className="text-xs text-slate-400 font-medium block">
+                Capital Holdings Balance ($)
+              </label>
+              <input
+                id="cash-editor-input"
+                type="number"
+                step="0.01"
+                min="0"
+                value={cashInput}
+                onChange={(e) => handleCashUpdate(e.target.value)}
+                className="bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded px-2 py-1 mt-1 text-base font-mono font-semibold text-slate-200 focus:outline-none w-full"
+              />
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-center">
               <p className="text-xs text-slate-400 font-medium">Securities Value Under Management</p>
-              <p className="text-xl font-mono font-semibold mt-1 text-cyan-400">${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xl font-mono font-semibold mt-2.5 text-cyan-400">${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center">
               <div>
@@ -736,18 +769,12 @@ export default function App() {
           </div>
         </section>
 
-        {/* MAIN BODY LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* COLUMN 1 & 2: MARKET TILES AND TRADE CONTROL PANEL */}
           <div className="lg:col-span-2 space-y-6">
-            
-            {/* LIVE BOARD & TICKER ADDER */}
             <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Asset Watchlist & Ingestion Panel</h2>
                 
-                {/* Search Form */}
                 <form onSubmit={handleAddTicker} className="flex gap-2 w-full sm:w-auto">
                   <input
                     type="text"
@@ -767,10 +794,9 @@ export default function App() {
                 </form>
               </div>
 
-              {/* Watchlist Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {filteredWatchlist.map((ticker) => {
-                  const stock = marketStocks[ticker];
+                  const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
                   if (!stock || marketStatus.closed) {
                     return (
                       <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center opacity-70">
@@ -808,16 +834,15 @@ export default function App() {
               </div>
             </div>
 
-            {/* TRANSACTION TERMINAL */}
             <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
               <h2 className="text-sm font-semibold text-slate-300 mb-4 uppercase tracking-wider">Simulated Execution Terminal</h2>
-              {marketStocks[selectedTicker] && !marketStatus.closed ? (
+              {(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker]) && !marketStatus.closed ? (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
                     <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
                     <span className="text-sm text-slate-300 ml-2 font-mono">
-                      @ ${marketStocks[selectedTicker].price.toFixed(2)}
+                      @ ${(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker]).price.toFixed(2)}
                     </span>
                   </div>
                   
@@ -854,7 +879,6 @@ export default function App() {
               )}
             </div>
 
-            {/* PORTFOLIO LIST */}
             <section id="analytics" className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
               <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Your Position Portfolio</h2>
               {portfolio.length === 0 ? (
@@ -873,7 +897,7 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
                       {portfolio.map((pos) => {
-                        const currentPrice = marketStocks[pos.ticker]?.price;
+                        const currentPrice = marketStocks[pos.ticker]?.price || BASELINE_STOCKS[pos.ticker]?.price;
                         const displayPrice = marketStatus.closed || !currentPrice ? '--' : `$${currentPrice.toFixed(2)}`;
                         const pnl = marketStatus.closed || !currentPrice ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
                         return (
@@ -893,10 +917,8 @@ export default function App() {
                 </div>
               )}
             </section>
-
           </div>
 
-          {/* SIDEBAR: AI DIAGNOSTICS */}
           <section id="settings" className="space-y-4">
             <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 min-h-[300px]">
               <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
