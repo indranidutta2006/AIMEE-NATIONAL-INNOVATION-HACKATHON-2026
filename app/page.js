@@ -2,14 +2,12 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-// Replaced DEFAULT_WATCHLIST with top 15 major global and Indian companies
 const TOP_15_COMPANIES = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
   'META', 'TSLA', 'BRK.A', 'V', 'JPM', 
   'INFY.NSE', 'TCS.NSE', 'RELIANCE.NSE', 'HDFCBANK.NSE', 'BARC.LSE'
 ];
 
-// Baseline fallback prices extended for structural safety
 const BASELINE_STOCKS = {
   'AAPL': { name: 'Apple Inc. (NASDAQ)', price: 175.00, change: 0.5, rsi: 72, volume: 'High', exchange: 'US' },
   'MSFT': { name: 'Microsoft Corp (NASDAQ)', price: 420.00, change: 1.1, rsi: 65, volume: 'High', exchange: 'US' },
@@ -155,34 +153,6 @@ const getInitialOpenDateValue = () => {
   return toNYDateInputValue(d);
 };
 
-const getCurrentDateValue = () => toNYDateInputValue(new Date());
-const getCurrentTimeValue = () => toNYTimeInputValue(new Date());
-
-const isValidTimeValue = (value) => {
-  if (!value || !/^\d{2}:\d{2}$/.test(value)) return false;
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
-};
-
-const normalizeTimeValue = (value) => {
-  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
-  if (!digits) return '00:00';
-  
-  if (digits.length <= 2) {
-    const parsedHours = Number.parseInt(digits, 10) || 0;
-    const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
-    return `${hours}:00`;
-  }
-  
-  const parsedHours = Number.parseInt(digits.slice(0, 2), 10) || 0;
-  const parsedMinutes = Number.parseInt(digits.slice(2, 4), 10) || 0;
-  
-  const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
-  const minutes = String(Math.min(59, Math.max(0, parsedMinutes))).padStart(2, '0');
-  
-  return `${hours}:${minutes}`;
-};
-
 const getAdjustedTimeValue = (value, field, direction) => {
   const [hours, minutes] = value.split(':').map(Number);
   const next = new Date(2000, 0, 1, hours, minutes);
@@ -197,6 +167,8 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
   const [chartPoints, setChartPoints] = useState([]);
 
   useEffect(() => {
+    if (basePrice === undefined || basePrice === null) return;
+    
     let currentPrice = basePrice * 0.99;
     const items = [];
     const seed = ticker.charCodeAt(0) + ticker.charCodeAt(ticker.length - 1);
@@ -219,7 +191,7 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
     setHoverData(null);
   }, [basePrice, ticker]);
 
-  if (chartPoints.length === 0) return null;
+  if (chartPoints.length === 0 || basePrice === undefined) return null;
 
   const minVal = Math.min(...chartPoints.map(p => p.val));
   const maxVal = Math.max(...chartPoints.map(p => p.val));
@@ -307,7 +279,8 @@ export default function App() {
   const [cash, setCash] = useState(100000.00); 
   const [cashInput, setCashInput] = useState("100000.00"); 
   const [watchlist, setWatchlist] = useState(TOP_15_COMPANIES); 
-  const [marketStocks, setMarketStocks] = useState({});
+  // Initialized with baseline state safely, but never reverted back to it if network cuts out
+  const [marketStocks, setMarketStocks] = useState(() => BASELINE_STOCKS);
   const [selectedExchangeFilter, setSelectedExchangeFilter] = useState('ALL'); 
   const [portfolio, setPortfolio] = useState([
     { ticker: 'AAPL', shares: 10, avgBuyPrice: 185.00 }, 
@@ -333,13 +306,10 @@ export default function App() {
   const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => "10:00");
   const [timeInputDraft, setTimeInputDraft] = useState(() => "10:00");
   
-  const [timeInputError, setTimeInputError] = useState('');
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState({ closed: false, message: '' });
   const [lastExtractedAt, setLastExtractedAt] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [marketRegion, setMarketRegion] = useState('US');
   const [activeMenuItem, setActiveMenuItem] = useState('Overview');
   const dashboardMenuItems = ['Overview', 'Watchlist', 'Portfolio', 'Analytics', 'Settings'];
   const playbackClockRef = useRef(new Date());
@@ -364,11 +334,6 @@ export default function App() {
     if (!value) return 'No date selected';
     const parsedDate = new Date(`${value}T12:00:00`);
     return parsedDate.toLocaleDateString('en', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  };
-
-  const formatTimestamp = (value) => {
-    if (!value) return 'Awaiting market extraction';
-    return `${value.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })} on ${value.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   const formatSelectedDateTime = (dateValue, timeValue) => {
@@ -470,13 +435,10 @@ export default function App() {
     }
 
     setMarketStocks((prevStocks) => {
-      const base = Object.keys(prevStocks).length > 0 ? prevStocks : BASELINE_STOCKS;
-      const updated = { ...base };
+      const updated = { ...prevStocks };
       
       Object.keys(updated).forEach((ticker) => {
-        if (!updated[ticker]) {
-          updated[ticker] = { name: `${ticker} Instrument`, price: 250.00, change: 0, rsi: 50, volume: 'Normal', exchange: detectExchangeRegion(ticker) };
-        }
+        if (!updated[ticker]) return;
         const percentChange = (Math.random() * 1.6 - 0.8) / 100;
         updated[ticker].price = Math.max(1, +(updated[ticker].price * (1 + percentChange)).toFixed(2));
         updated[ticker].change = +(updated[ticker].change + percentChange * 10).toFixed(2);
@@ -488,7 +450,7 @@ export default function App() {
 
   const runSimulationTickMemoized = useCallback(() => {
     runSimulationTick.current();
-  }, [selectedDate, selectedTime]);
+  }, []);
 
   const fetchMarketData = useCallback(async (forcedSymbols = null, bypassCache = false, dateOverride = null, timeOverride = null) => {
     const selectedDateValue = dateOverride || selectedDate;
@@ -526,17 +488,13 @@ export default function App() {
         saveCache(structuralMap);
         setApiMode('TwelveData');
         setApiError(null);
-      } else {
-        // Fall back to retaining the current state instead of forcing simulation shifts
-        setMarketStocks((prev) => (Object.keys(prev).length > 0 ? prev : BASELINE_STOCKS));
       }
       setLastExtractedAt(new Date());
     } catch (err) {
-      setApiMode('Simulation');
-      setApiError('Ingestion limit / Pipeline issue. Falling back to last cached dataset.');
-      // Retain the current data structure instead of executing random drift ticks
-      setMarketStocks((prev) => (Object.keys(prev).length > 0 ? prev : BASELINE_STOCKS));
+      setApiMode('Simulation (Pipeline Issue)');
+      setApiError('Ingestion limit reached. Utilizing cached parameters.');
       setLastExtractedAt(new Date());
+      // Explicitly preserving the prior state; no baseline mapping execution
     }
   }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
 
@@ -666,7 +624,7 @@ export default function App() {
 
   const handleBuy = () => {
     if (marketStatus.closed) return;
-    const currentStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
+    const currentStock = marketStocks[selectedTicker];
     if (!currentStock) return;
     const totalCost = currentStock.price * tradeShares;
 
@@ -692,7 +650,7 @@ export default function App() {
 
   const handleSell = () => {
     if (marketStatus.closed) return;
-    const currentStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
+    const currentStock = marketStocks[selectedTicker];
     if (!currentStock) return;
     const position = portfolio.find(p => p.ticker === selectedTicker);
 
@@ -709,7 +667,7 @@ export default function App() {
         dropPct,
         buyPrice: position.avgBuyPrice,
         sellPrice: currentStock.price,
-        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange || detectExchangeRegion(selectedTicker)} theater impacted this position exit.`]
+        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the {currentStock.exchange} theater impacted this position exit.`]
       });
     }
 
@@ -724,7 +682,7 @@ export default function App() {
 
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
     if (marketStatus.closed) return 0; 
-    const currentPrice = marketStocks[curr.ticker]?.price || BASELINE_STOCKS[curr.ticker]?.price || curr.avgBuyPrice;
+    const currentPrice = marketStocks[curr.ticker]?.price || curr.avgBuyPrice;
     return acc + (curr.shares * currentPrice);
   }, 0);
 
@@ -733,12 +691,12 @@ export default function App() {
 
   const filteredWatchlist = watchlist.filter(ticker => {
     if (selectedExchangeFilter === 'ALL') return true;
-    const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
+    const stock = marketStocks[ticker];
     const region = stock?.exchange || detectExchangeRegion(ticker);
     return region === selectedExchangeFilter;
   });
 
-  const activeStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
+  const activeStock = marketStocks[selectedTicker];
 
   if (!mounted) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">Loading Global Ingestion Matrix...</div>;
 
@@ -798,7 +756,6 @@ export default function App() {
 
                   {isCalendarOpen && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
-                      {/* Month & Year Navigation Control Bar */}
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                         <button 
                           type="button"
@@ -825,12 +782,10 @@ export default function App() {
                         </button>
                       </div>
 
-                      {/* Day Names Grid Header Array */}
                       <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase select-none">
                         <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
                       </div>
 
-                      {/* Dynamic Days Grid Blocks */}
                       <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
                         {calendarDays.map((day, i) => {
                           if (!day) {
@@ -860,7 +815,6 @@ export default function App() {
                         })}
                       </div>
 
-                      {/* Compact Time Increment Section */}
                       <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
                         <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
                           <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
@@ -922,7 +876,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* METRICS METADATA ROW WITH CASH ENTRY FUNCTIONALITY */}
         <section id="portfolio">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
@@ -982,7 +935,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {filteredWatchlist.map((ticker) => {
-                  const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
+                  const stock = marketStocks[ticker];
                   if (!stock || marketStatus.closed) {
                     return (
                       <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center opacity-70">
@@ -1020,7 +973,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* UPGRADED INTRADAY PRICE TELEMETRY STREAM CHART PANEL */}
             {activeStock && !marketStatus.closed ? (
               <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 space-y-4 animate-fadeIn">
                 <div>
@@ -1033,14 +985,12 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Inline SVG Chart Implementation */}
                 <IntradayLineChart 
                   ticker={selectedTicker} 
                   basePrice={activeStock.price} 
                   isPositive={activeStock.change >= 0} 
                 />
 
-                {/* Performance Metric Footer Badges */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
@@ -1125,7 +1075,7 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
                       {portfolio.map((pos) => {
-                        const currentPrice = marketStocks[pos.ticker]?.price || BASELINE_STOCKS[pos.ticker]?.price;
+                        const currentPrice = marketStocks[pos.ticker]?.price;
                         const displayPrice = marketStatus.closed || !currentPrice ? '--' : `$${currentPrice.toFixed(2)}`;
                         const pnl = marketStatus.closed || !currentPrice ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
                         return (
