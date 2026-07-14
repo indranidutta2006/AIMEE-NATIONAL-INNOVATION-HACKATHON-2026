@@ -494,7 +494,7 @@ export default function App() {
       setApiError('Ingestion limit reached. Utilizing cached parameters.');
       setLastExtractedAt(new Date());
       
-      // Explicitly lock down the state value maps using immutable layout generation updates
+      // Explicitly protect layout maps using dynamic state memory copies
       setMarketStocks((prevStocks) => {
         if (prevStocks && Object.keys(prevStocks).length > 0) {
           return { ...prevStocks };
@@ -504,7 +504,7 @@ export default function App() {
     }
   }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
 
-  // Clean unified execution scheduler tracking loop
+  // SINGLE UNIFIED SCHEDULER: Duplicate loop has been entirely removed to prevent conflicts
   useEffect(() => {
     if (!mounted) return;
     
@@ -523,7 +523,7 @@ export default function App() {
         return; 
       }
 
-      // Live mode processing recovery loop pipelines
+      // Safe conditional loop routing execution checks
       if (!isManualSim && rateLimitTimer === 0) {
         fetchMarketData(null, true);
       } else if (isManualSim) {
