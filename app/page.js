@@ -262,15 +262,21 @@ export default function App() {
     return `${parsedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${parsedDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })}`;
   };
 
+  // FIXED: Day allocation algorithms pulled forward by 1 index offset location cleanly
   const getCalendarDays = (viewDate) => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const leadingDays = (firstDay.getDay() + 6) % 7;
+    
+    const firstDay = new Date(Date.UTC(year, month, 1));
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const firstDayOfWeek = firstDay.getUTCDay();
+    
+    // Pulled ahead by 1 index matrix block to reflect default operating terminal structures
+    const leadingDays = firstDayOfWeek === 0 ? 0 : firstDayOfWeek;
     const cells = [];
+    
     for (let index = 0; index < leadingDays; index += 1) cells.push(null);
-    for (let day = 1; day <= daysInMonth; day += 1) cells.push(new Date(year, month, day));
+    for (let day = 1; day <= daysInMonth; day += 1) cells.push(new Date(Date.UTC(year, month, day)));
     while (cells.length % 7 !== 0) cells.push(null);
     return cells;
   };
@@ -342,7 +348,8 @@ export default function App() {
     return Object.keys(parsed).length > 0 ? parsed : null;
   };
 
-  const runSimulationTick = useCallback(() => {
+  const runSimulationTick = useRef(null);
+  runSimulationTick.current = () => {
     if (isMarketClosedForDate(selectedDate, selectedTime)) {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
       setApiMode('Closed Terminal');
@@ -364,6 +371,10 @@ export default function App() {
       });
       return updated;
     });
+  };
+
+  const runSimulationTickMemoized = useCallback(() => {
+    runSimulationTick.current();
   }, [selectedDate, selectedTime]);
 
   const fetchMarketData = useCallback(async (forcedSymbols = null, bypassCache = false, dateOverride = null, timeOverride = null) => {
@@ -380,7 +391,7 @@ export default function App() {
 
     if (isManualSim) {
       setApiMode('Simulation');
-      runSimulationTick();
+      runSimulationTickMemoized();
       setLastExtractedAt(new Date());
       return;
     }
@@ -403,16 +414,16 @@ export default function App() {
         setApiMode('TwelveData');
         setApiError(null);
       } else {
-        runSimulationTick();
+        runSimulationTickMemoized();
       }
       setLastExtractedAt(new Date());
     } catch (err) {
       setApiMode('Simulation');
       setApiError('Ingestion limit / Pipeline issue. Local simulation backup engaged.');
-      runSimulationTick();
+      runSimulationTickMemoized();
       setLastExtractedAt(new Date());
     }
-  }, [watchlist, portfolio, runSimulationTick, isManualSim, selectedDate, selectedTime]);
+  }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -434,12 +445,12 @@ export default function App() {
       if (apiMode === 'TwelveData' && !isManualSim && rateLimitTimer === 0) {
         fetchMarketData(null, true);
       } else {
-        runSimulationTick();
+        runSimulationTickMemoized();
       }
     }, 15000);
 
     return () => clearInterval(activeInterval);
-  }, [mounted, fetchMarketData, apiMode, runSimulationTick, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
+  }, [mounted, fetchMarketData, apiMode, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -469,7 +480,6 @@ export default function App() {
     setTimeInputDraft(nextTime);
   };
 
-  // Safe handler to sync typed string numerical states back to float variables
   const handleCashUpdate = (val) => {
     setCashInput(val);
     const parsed = parseFloat(val);
@@ -536,7 +546,7 @@ export default function App() {
 
   const handleBuy = () => {
     if (marketStatus.closed) return;
-    const currentStock = marketStocks[selectedTicker];
+    const currentStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
     if (!currentStock) return;
     const totalCost = currentStock.price * tradeShares;
 
@@ -562,7 +572,7 @@ export default function App() {
 
   const handleSell = () => {
     if (marketStatus.closed) return;
-    const currentStock = marketStocks[selectedTicker];
+    const currentStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
     if (!currentStock) return;
     const position = portfolio.find(p => p.ticker === selectedTicker);
 
@@ -579,7 +589,7 @@ export default function App() {
         dropPct,
         buyPrice: position.avgBuyPrice,
         sellPrice: currentStock.price,
-        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange} theater impacted this position exit.`]
+        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange || detectExchangeRegion(selectedTicker)} theater impacted this position exit.`]
       });
     }
 
@@ -594,7 +604,7 @@ export default function App() {
 
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
     if (marketStatus.closed) return 0; 
-    const currentPrice = marketStocks[curr.ticker]?.price || curr.avgBuyPrice;
+    const currentPrice = marketStocks[curr.ticker]?.price || BASELINE_STOCKS[curr.ticker]?.price || curr.avgBuyPrice;
     return acc + (curr.shares * currentPrice);
   }, 0);
 
@@ -603,7 +613,7 @@ export default function App() {
 
   const filteredWatchlist = watchlist.filter(ticker => {
     if (selectedExchangeFilter === 'ALL') return true;
-    const stock = marketStocks[ticker];
+    const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
     const region = stock?.exchange || detectExchangeRegion(ticker);
     return region === selectedExchangeFilter;
   });
@@ -665,92 +675,90 @@ export default function App() {
                   </div>
 
                   {isCalendarOpen && (
-  <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
-    {/* Month & Year Navigation Control Bar */}
-    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-      <button 
-        type="button"
-        onClick={() => {
-          // Set to the 1st of the month before subtracting to prevent running into varying month-lengths
-          const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() - 1, 1);
-          setCalendarViewDate(target);
-        }}
-        className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
-      >
-        &lt;
-      </button>
-      <span className="text-xs font-semibold tracking-wide text-slate-200 uppercase select-none">
-        {calendarViewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-      </span>
-      <button 
-        type="button"
-        onClick={() => {
-          const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + 1, 1);
-          setCalendarViewDate(target);
-        }}
-        className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
-      >
-        &gt;
-      </button>
-    </div>
+                    <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
+                      {/* Month & Year Navigation Control Bar */}
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() - 1, 1);
+                            setCalendarViewDate(target);
+                          }}
+                          className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
+                        >
+                          &lt;
+                        </button>
+                        <span className="text-xs font-semibold tracking-wide text-slate-200 uppercase select-none">
+                          {calendarViewDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+                        </span>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + 1, 1);
+                            setCalendarViewDate(target);
+                          }}
+                          className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
+                        >
+                          &gt;
+                        </button>
+                      </div>
 
-    {/* Day Names Grid Header Array */}
-    <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase select-none">
-      <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
-    </div>
+                      {/* Day Names Grid Header Array */}
+                      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase select-none">
+                        <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+                      </div>
 
-    {/* Dynamic Days Grid Blocks */}
-    <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
-      {calendarDays.map((day, i) => {
-        if (!day) {
-          return <div key={`empty-${i}`} className="p-1.5 opacity-0 select-none">--</div>;
-        }
-        
-        // Formatter-safe date matching directly across ISO parameters
-        const dateString = day.toISOString().split('T')[0];
-        const isSelected = dateString === calendarSelectionDate;
-        const isToday = new Date().toISOString().split('T')[0] === dateString;
+                      {/* Dynamic Days Grid Blocks */}
+                      <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
+                        {calendarDays.map((day, i) => {
+                          if (!day) {
+                            return <div key={`empty-${i}`} className="p-1.5 opacity-0 select-none">--</div>;
+                          }
+                          
+                          const dateString = day.toISOString().split('T')[0];
+                          const isSelected = dateString === calendarSelectionDate;
+                          const isToday = new Date().toISOString().split('T')[0] === dateString;
 
-        return (
-          <button
-            key={i}
-            type="button"
-            onClick={() => handleCalendarDateSelect(dateString)}
-            className={`p-1.5 rounded-md font-medium transition duration-150 text-center ${
-              isSelected
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20'
-                : isToday
-                ? 'border border-cyan-500/50 bg-cyan-500/5 text-cyan-400 hover:bg-slate-800'
-                : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
-            }`}
-          >
-            {day.getUTCDate()}
-          </button>
-        );
-      })}
-    </div>
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => handleCalendarDateSelect(dateString)}
+                              className={`p-1.5 rounded-md font-medium transition duration-150 text-center ${
+                                isSelected
+                                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/20'
+                                  : isToday
+                                  ? 'border border-cyan-500/50 bg-cyan-500/5 text-cyan-400 hover:bg-slate-800'
+                                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
+                              }`}
+                            >
+                              {day.getUTCDate()}
+                            </button>
+                          );
+                        })}
+                      </div>
 
-    {/* Compact Time Increment Section */}
-    <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
-      <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
-        <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
-        <div className="flex justify-between items-center mt-1 px-1">
-          <button type="button" onClick={() => updateTimeField('hour', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
-          <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[0] || '00'}</span>
-          <button type="button" onClick={() => updateTimeField('hour', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
-        </div>
-      </div>
-      <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
-        <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Minute</span>
-        <div className="flex justify-between items-center mt-1 px-1">
-          <button type="button" onClick={() => updateTimeField('minute', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
-          <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[1] || '00'}</span>
-          <button type="button" onClick={() => updateTimeField('minute', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+                      {/* Compact Time Increment Section */}
+                      <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
+                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
+                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
+                          <div className="flex justify-between items-center mt-1 px-1">
+                            <button type="button" onClick={() => updateTimeField('hour', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
+                            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[0] || '00'}</span>
+                            <button type="button" onClick={() => updateTimeField('hour', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
+                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Minute</span>
+                          <div className="flex justify-between items-center mt-1 px-1">
+                            <button type="button" onClick={() => updateTimeField('minute', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
+                            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[1] || '00'}</span>
+                            <button type="button" onClick={() => updateTimeField('minute', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
