@@ -155,34 +155,6 @@ const getInitialOpenDateValue = () => {
   return toNYDateInputValue(d);
 };
 
-const getCurrentDateValue = () => toNYDateInputValue(new Date());
-const getCurrentTimeValue = () => toNYTimeInputValue(new Date());
-
-const isValidTimeValue = (value) => {
-  if (!value || !/^\d{2}:\d{2}$/.test(value)) return false;
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
-};
-
-const normalizeTimeValue = (value) => {
-  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
-  if (!digits) return '00:00';
-  
-  if (digits.length <= 2) {
-    const parsedHours = Number.parseInt(digits, 10) || 0;
-    const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
-    return `${hours}:00`;
-  }
-  
-  const parsedHours = Number.parseInt(digits.slice(0, 2), 10) || 0;
-  const parsedMinutes = Number.parseInt(digits.slice(2, 4), 10) || 0;
-  
-  const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
-  const minutes = String(Math.min(59, Math.max(0, parsedMinutes))).padStart(2, '0');
-  
-  return `${hours}:${minutes}`;
-};
-
 const getAdjustedTimeValue = (value, field, direction) => {
   const [hours, minutes] = value.split(':').map(Number);
   const next = new Date(2000, 0, 1, hours, minutes);
@@ -228,11 +200,9 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
   const maxVal = Math.max(...chartPoints.map(p => p.val));
   const marginRange = maxVal - minVal === 0 ? 1 : maxVal - minVal;
 
-  // Chart viewbox boundaries
   const width = 600;
   const height = 240;
 
-  // Generate SVG Coordinate String
   const svgPoints = chartPoints.map((p, idx) => {
     const x = (idx / (chartPoints.length - 1)) * (width - 40) + 20;
     const y = height - 20 - ((p.val - minVal) / marginRange) * (height - 40);
@@ -267,7 +237,6 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
 
   return (
     <div className="relative w-full bg-slate-950 rounded-xl p-3 border border-slate-800/80" ref={containerRef}>
-      {/* Dynamic Hover Tooltip Tracker Overlay */}
       <div className="absolute top-2 left-3 h-8 flex gap-6 text-xs text-slate-400 font-mono">
         <div>Time Frame: <span className="text-slate-100 font-bold">{hoverData ? hoverData.time : '09:30 - 16:00'}</span></div>
         <div>Indexed Spot: <span className={`${isPositive ? 'text-emerald-400' : 'text-rose-400'} font-bold`}>${hoverData ? hoverData.price.toFixed(2) : basePrice.toFixed(2)}</span></div>
@@ -290,18 +259,13 @@ function IntradayLineChart({ basePrice, ticker, isPositive }) {
           </linearGradient>
         </defs>
 
-        {/* Grid Background Lines */}
         <line x1="20" y1="20" x2={width - 20} y2="20" stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
         <line x1="20" y1={height / 2} x2={width - 20} y2={height / 2} stroke="#1e293b" strokeWidth="1" strokeDasharray="4 4"/>
         <line x1="20" y1={height - 20} x2={width - 20} y2={height - 20} stroke="#334155" strokeWidth="1"/>
 
-        {/* Shaded Price Area under path */}
         <path d={areaPath} fill={fillColor} />
-
-        {/* Core Line Trace */}
         <path d={linePath} fill="none" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* Crosshair Tracking Indicators */}
         {hoverData && (
           <>
             <line x1={hoverData.cx} y1="20" x2={hoverData.cx} y2={height - 20} stroke="#475569" strokeWidth="1" strokeDasharray="2 2" />
@@ -327,8 +291,14 @@ export default function App() {
   const [selectedTicker, setSelectedTicker] = useState('AAPL');
   const [searchQuery, setSearchQuery] = useState('');
   const [tradeShares, setTradeShares] = useState(1);
-  const [autopsyReport, setAutopsyReport] = useState(null);
   
+  // Chatbot State
+  const [messages, setMessages] = useState([
+    { id: 1, text: "Welcome to ApexTrader Assistant. How can I help you analyze your positions or global market indicators today?", sender: 'ai' }
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const chatEndRef = useRef(null);
+
   // Environment & Connection States
   const [apiMode, setApiMode] = useState('Checking...');
   const [isManualSim, setIsManualSim] = useState(false);
@@ -338,21 +308,18 @@ export default function App() {
   const [mounted, setMounted] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
-  // Initialized states to look at standard active market hours (10:00 AM NY Time)
   const [selectedDate, setSelectedDate] = useState(() => getInitialOpenDateValue());
   const [selectedTime, setSelectedTime] = useState(() => "10:00");
   const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getInitialOpenDateValue());
   const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => "10:00");
   const [timeInputDraft, setTimeInputDraft] = useState(() => "10:00");
   
-  const [timeInputError, setTimeInputError] = useState('');
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState({ closed: false, message: '' });
   const [lastExtractedAt, setLastExtractedAt] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [marketRegion, setMarketRegion] = useState('US');
   const [activeMenuItem, setActiveMenuItem] = useState('Overview');
+  
   const dashboardMenuItems = ['Overview', 'Watchlist', 'Portfolio', 'Analytics', 'Settings'];
   const playbackClockRef = useRef(new Date());
 
@@ -376,11 +343,6 @@ export default function App() {
     if (!value) return 'No date selected';
     const parsedDate = new Date(`${value}T12:00:00`);
     return parsedDate.toLocaleDateString('en', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  };
-
-  const formatTimestamp = (value) => {
-    if (!value) return 'Awaiting market extraction';
-    return `${value.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })} on ${value.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   const formatSelectedDateTime = (dateValue, timeValue) => {
@@ -425,6 +387,11 @@ export default function App() {
     localStorage.setItem('apex_portfolio', JSON.stringify(portfolio));
     localStorage.setItem('apex_watchlist', JSON.stringify(watchlist));
   }, [cash, portfolio, watchlist, mounted]);
+
+  // Auto scroll chat to bottom when updates arrive
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const triggerNotification = (message, type = 'info') => {
     setFeedbackMsg({ text: message, type });
@@ -712,17 +679,6 @@ export default function App() {
     }
 
     const totalCredit = currentStock.price * tradeShares;
-    if (currentStock.price < position.avgBuyPrice) {
-      const dropPct = (((position.avgBuyPrice - currentStock.price) / position.avgBuyPrice) * 100).toFixed(1);
-      setAutopsyReport({
-        ticker: selectedTicker,
-        dropPct,
-        buyPrice: position.avgBuyPrice,
-        sellPrice: currentStock.price,
-        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange || detectExchangeRegion(selectedTicker)} theater impacted this position exit.`]
-      });
-    }
-
     const nextCash = cash + totalCredit;
     setCash(nextCash);
     setCashInput(nextCash.toFixed(2));
@@ -730,6 +686,44 @@ export default function App() {
       return prevPortfolio.map(p => p.ticker === selectedTicker ? { ...p, shares: p.shares - tradeShares } : p).filter(p => p.shares > 0);
     });
     triggerNotification(`Liquidated ${tradeShares} shares of ${selectedTicker}!`, 'success');
+  };
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    const userMsgText = chatInput;
+    const newMsg = { id: Date.now(), text: userMsgText, sender: 'user' };
+    setMessages(prev => [...prev, newMsg]);
+    setChatInput("");
+
+    // Simple context parsing engine mock response
+    setTimeout(() => {
+      const cleanText = userMsgText.toLowerCase();
+      let responseText = "I am processing your text request against multi-exchange metrics. Let me know if you need volatility adjustments.";
+      
+      const currentStock = marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker];
+
+      if (cleanText.includes('balance') || cleanText.includes('cash') || cleanText.includes('money')) {
+        responseText = `Your operational sandboxed cash asset allocations currently scale exactly at $${cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}.`;
+      } else if (cleanText.includes('portfolio') || cleanText.includes('holding')) {
+        responseText = `You hold vectors across ${portfolio.length} core listed securities assets. Net market tracking position valuation is $${totalPortfolioValue.toFixed(2)}.`;
+      } else if (cleanText.includes('ticker') || cleanText.includes('stock') || cleanText.includes('price')) {
+        if (currentStock) {
+          responseText = `The currently selected index node is ${selectedTicker} (${currentStock.name}). Its price registers at $${currentStock.price.toFixed(2)} with an indicator track of ${currentStock.change}% today.`;
+        }
+      } else if (cleanText.includes('rsi') || cleanText.includes('indicator')) {
+        if (currentStock) {
+          responseText = `Relative Strength Metrics (RSI) matrix for ${selectedTicker} indicates a level of ${currentStock.rsi || '50'}. ${currentStock.rsi > 70 ? 'Warning: Asset signals overbought parameters.' : currentStock.rsi < 30 ? 'Note: Asset registers oversold signals.' : 'Trading index is range bound.'}`;
+        }
+      }
+
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        text: responseText,
+        sender: 'ai'
+      }]);
+    }, 700);
   };
 
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
@@ -808,7 +802,6 @@ export default function App() {
 
                   {isCalendarOpen && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
-                      {/* Month & Year Navigation Control Bar */}
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                         <button 
                           type="button"
@@ -835,12 +828,10 @@ export default function App() {
                         </button>
                       </div>
 
-                      {/* Day Names Grid Header Array */}
                       <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase select-none">
                         <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
                       </div>
 
-                      {/* Dynamic Days Grid Blocks */}
                       <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
                         {calendarDays.map((day, i) => {
                           if (!day) {
@@ -870,7 +861,6 @@ export default function App() {
                         })}
                       </div>
 
-                      {/* Compact Time Increment Section */}
                       <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
                         <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
                           <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
@@ -894,298 +884,311 @@ export default function App() {
                 </div>
               </div>
             </div>
-          </div>
           
-          <header className="border-b border-slate-800 pb-4 mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">ApexTrader Global</h1>
-                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${marketStatus.closed ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'}`}>{apiMode}</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Multi-Exchange Sandbox Environment supporting US, NSE, LSE, and TSE execution structures.</p>
-            </div>
-            <div className="text-left sm:text-right">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Combined Global Net Worth</span>
-              <div className="text-2xl md:text-3xl font-mono font-bold text-emerald-400">
-                ${netWorth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-            </div>
-          </header>
-        </section>
-
-        <section id="watchlist">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
-            {['ALL', 'US', 'India', 'Europe', 'Asia'].map((exchange) => (
-              <button
-                key={exchange}
-                onClick={() => setSelectedExchangeFilter(exchange)}
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
-                  selectedExchangeFilter === exchange
-                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                }`}
-              >
-                {exchange === 'ALL' ? '🌍 Global Universe' : exchange}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* METRICS METADATA ROW WITH CASH ENTRY FUNCTIONALITY */}
-        <section id="portfolio">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
-              <label htmlFor="cash-editor-input" className="text-xs text-slate-400 font-medium block">
-                Capital Holdings Balance ($)
-              </label>
-              <input
-                id="cash-editor-input"
-                type="number"
-                step="0.01"
-                min="0"
-                value={cashInput}
-                onChange={(e) => handleCashUpdate(e.target.value)}
-                className="bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded px-2 py-1 mt-1 text-base font-mono font-semibold text-slate-200 focus:outline-none w-full"
-              />
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-center">
-              <p className="text-xs text-slate-400 font-medium">Securities Value Under Management</p>
-              <p className="text-xl font-mono font-semibold mt-2.5 text-cyan-400">${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center">
+            <header className="border-b border-slate-800 pb-4 mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <p className="text-xs text-slate-400 font-medium">Simulation Mode Toggle</p>
-                <button onClick={() => !marketStatus.closed && setIsManualSim(!isManualSim)} disabled={marketStatus.closed} className={`text-xs mt-1 px-2.5 py-1 rounded font-semibold border ${marketStatus.closed ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
-                  {marketStatus.closed ? '🔒 Engine Paused' : isManualSim ? '⏸️ Sandbox Sim Active' : '⚡ Live Matrix'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">ApexTrader Global</h1>
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${marketStatus.closed ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'}`}>{apiMode}</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Multi-Exchange Sandbox Environment supporting US, NSE, LSE, and TSE execution structures.</p>
               </div>
-              <button onClick={() => fetchMarketData(null, true)} disabled={isManualSim || marketStatus.closed} className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold disabled:opacity-40 disabled:cursor-not-allowed">🔄 Sync API</button>
-            </div>
-          </div>
-        </section>
+              <div className="text-left sm:text-right">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Combined Global Net Worth</span>
+                <div className="text-2xl md:text-3xl font-mono font-bold text-emerald-400">
+                  ${netWorth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            </header>
+          </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-4">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Asset Watchlist & Ingestion Panel</h2>
-                
-                <form onSubmit={handleAddTicker} className="flex gap-2 w-full sm:w-auto">
+          <section id="watchlist">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
+              {['ALL', 'US', 'India', 'Europe', 'Asia'].map((exchange) => (
+                <button
+                  key={exchange}
+                  onClick={() => setSelectedExchangeFilter(exchange)}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
+                    selectedExchangeFilter === exchange
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
+                      : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
+                >
+                  {exchange === 'ALL' ? '🌍 Global Universe' : exchange}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section id="portfolio">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+                <label htmlFor="cash-editor-input" className="text-xs text-slate-400 font-medium block">
+                  Capital Holdings Balance ($)
+                </label>
+                <input
+                  id="cash-editor-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={cashInput}
+                  onChange={(e) => handleCashUpdate(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded px-2 py-1 mt-1 text-base font-mono font-semibold text-slate-200 focus:outline-none w-full"
+                />
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-center">
+                <p className="text-xs text-slate-400 font-medium">Securities Value Under Management</p>
+                <p className="text-xl font-mono font-semibold mt-2.5 text-cyan-400">${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center">
+                <div>
+                  <p className="text-xs text-slate-400 font-medium">Simulation Mode Toggle</p>
+                  <button onClick={() => !marketStatus.closed && setIsManualSim(!isManualSim)} disabled={marketStatus.closed} className={`text-xs mt-1 px-2.5 py-1 rounded font-semibold border ${marketStatus.closed ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
+                    {marketStatus.closed ? '🔒 Engine Paused' : isManualSim ? '⏸️ Sandbox Sim Active' : '⚡ Live Matrix'}
+                  </button>
+                </div>
+                <button onClick={() => fetchMarketData(null, true)} disabled={isManualSim || marketStatus.closed} className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono font-bold disabled:opacity-40 disabled:cursor-not-allowed">🔄 Sync API</button>
+              </div>
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Asset Watchlist & Ingestion Panel</h2>
+                  
+                  <form onSubmit={handleAddTicker} className="flex gap-2 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      disabled={marketStatus.closed}
+                      placeholder={marketStatus.closed ? "Market Closed" : "Add Ticker (e.g. INFY.NSE)"}
+                      className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono w-full sm:w-48 disabled:cursor-not-allowed disabled:bg-slate-900/40"
+                    />
+                    <button
+                      type="submit"
+                      disabled={marketStatus.closed}
+                      className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
+                    >
+                      + Track
+                    </button>
+                  </form>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {filteredWatchlist.map((ticker) => {
+                    const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
+                    if (!stock || marketStatus.closed) {
+                      return (
+                        <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center opacity-70">
+                          <span className="font-mono font-bold text-slate-400">{ticker}</span>
+                          <span className="text-xs text-slate-500 font-mono">--</span>
+                        </div>
+                      );
+                    }
+                    const isPositive = stock.change >= 0;
+                    return (
+                      <div 
+                        key={ticker} 
+                        onClick={() => setSelectedTicker(ticker)}
+                        className={`p-4 rounded-lg border transition cursor-pointer ${
+                          selectedTicker === ticker 
+                            ? 'bg-slate-800/80 border-cyan-500' 
+                            : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="font-mono font-bold text-lg">{ticker}</span>
+                            <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{stock.name}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-mono font-bold text-base">${stock.price.toFixed(2)}</p>
+                            <span className={`text-xs font-mono font-medium ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isPositive ? '+' : ''}{stock.change.toFixed(2)}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {activeStock && !marketStatus.closed ? (
+                <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 space-y-4 animate-fadeIn">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Intraday Telemetry Stream</p>
+                    <h3 className="text-base font-semibold text-slate-200 mt-0.5">
+                      {selectedTicker} Trading Performance Grid
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Sourcing continuous 15-minute intervals for <span className="text-slate-300 font-medium">{activeStock.name}</span> over trading frame {selectedDate}.
+                    </p>
+                  </div>
+
+                  <IntradayLineChart 
+                    ticker={selectedTicker} 
+                    basePrice={activeStock.price} 
+                    isPositive={activeStock.change >= 0} 
+                  />
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
+                    <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                      <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
+                      <span className="text-slate-200 font-semibold">${(activeStock.price * 0.995).toFixed(2)}</span>
+                    </div>
+                    <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                      <span className="text-slate-500 block text-[10px] uppercase">Intraday Apex</span>
+                      <span className="text-emerald-400 font-semibold">${(activeStock.price * 1.012).toFixed(2)}</span>
+                    </div>
+                    <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                      <span className="text-slate-500 block text-[10px] uppercase">Intraday Trough</span>
+                      <span className="text-rose-400 font-semibold">${(activeStock.price * 0.984).toFixed(2)}</span>
+                    </div>
+                    <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                      <span className="text-slate-500 block text-[10px] uppercase">Relative Strength (RSI)</span>
+                      <span className="text-cyan-400 font-semibold">{activeStock.rsi || 50}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
+                <h2 className="text-sm font-semibold text-slate-300 mb-4 uppercase tracking-wider">Simulated Execution Terminal</h2>
+                {activeStock && !marketStatus.closed ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
+                      <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
+                      <span className="text-sm text-slate-300 ml-2 font-mono">
+                        @ ${activeStock.price.toFixed(2)}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-400 whitespace-nowrap">Shares Volume:</label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={tradeShares}
+                        onChange={(e) => setTradeShares(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-20 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-center font-mono focus:outline-none focus:border-cyan-500 text-white"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <button 
+                        onClick={handleBuy}
+                        className="flex-1 sm:flex-none font-semibold bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
+                      >
+                        Buy Order
+                      </button>
+                      <button 
+                        onClick={handleSell}
+                        className="flex-1 sm:flex-none font-semibold bg-rose-600 hover:bg-rose-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
+                      >
+                        Sell Order
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 py-2">
+                    {marketStatus.closed ? "Orders suspended. Terminal execution fields are locked outside market operational frameworks." : "Select a symbol from your watchlist to access transaction fields."}
+                  </p>
+                )}
+              </div>
+
+              <section id="analytics" className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
+                <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Your Position Portfolio</h2>
+                {portfolio.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-4 text-center">No active stock holdings found. Expand your watchlist to begin.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm font-mono">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 text-xs">
+                          <th className="pb-2">Ticker</th>
+                          <th className="pb-2">Shares Owned</th>
+                          <th className="pb-2">Avg Buy Price</th>
+                          <th className="pb-2">Current Value</th>
+                          <th className="pb-2 text-right">Unrealized Net P&L</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {portfolio.map((pos) => {
+                          const currentPrice = marketStocks[pos.ticker]?.price || BASELINE_STOCKS[pos.ticker]?.price;
+                          const displayPrice = marketStatus.closed || !currentPrice ? '--' : `$${currentPrice.toFixed(2)}`;
+                          const pnl = marketStatus.closed || !currentPrice ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
+                          return (
+                            <tr key={pos.ticker} className="hover:bg-slate-800/30">
+                              <td className="py-3 font-bold text-slate-200">{pos.ticker}</td>
+                              <td className="py-3 text-slate-300">{pos.shares}</td>
+                              <td className="py-3 text-slate-400">${pos.avgBuyPrice.toFixed(2)}</td>
+                              <td className="py-3 font-semibold text-slate-200">{displayPrice}</td>
+                              <td className={`py-3 text-right font-bold ${pnl !== null && pnl >= 0 ? 'text-emerald-400' : pnl !== null ? 'text-rose-400' : 'text-slate-400'}`}>
+                                {pnl === null ? '--' : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* UPGRADED SIDEBAR: INTERACTIVE AI CHATBOT TERMINAL */}
+            <section id="settings" className="space-y-4">
+              <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 flex flex-col h-[520px]">
+                <div className="flex items-center gap-2 mb-3 border-b border-slate-800 pb-3">
+                  <span className="text-cyan-400 text-sm">🤖</span>
+                  <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">AI Trading Co-Pilot</h2>
+                </div>
+
+                {/* Chat History Node Stream */}
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 mb-3 scrollbar-thin scrollbar-thumb-slate-800">
+                  {messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col max-w-[85%] rounded-xl p-3 text-xs leading-relaxed ${
+                        msg.sender === 'user'
+                          ? 'bg-cyan-600 text-white ml-auto rounded-tr-none'
+                          : 'bg-slate-950 border border-slate-800 text-slate-300 mr-auto rounded-tl-none'
+                      }`}
+                    >
+                      <span className="text-[9px] uppercase font-bold text-slate-500 mb-1 tracking-wider block">
+                        {msg.sender === 'user' ? 'Trader Profile' : 'Apex Core AI'}
+                      </span>
+                      <p className="whitespace-pre-line">{msg.text}</p>
+                    </div>
+                  ))}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Interactive Message Dispatch Form */}
+                <form onSubmit={handleSendMessage} className="flex gap-2 border-t border-slate-800 pt-3">
                   <input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    disabled={marketStatus.closed}
-                    placeholder={marketStatus.closed ? "Market Closed" : "Add Ticker (e.g. INFY.NSE)"}
-                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono w-full sm:w-48 disabled:cursor-not-allowed disabled:bg-slate-900/40"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder={marketStatus.closed ? "Engine running offline..." : "Ask about cash balance, RSI, portfolio..."}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                   />
                   <button
                     type="submit"
-                    disabled={marketStatus.closed}
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition shrink-0"
                   >
-                    + Track
+                    Send
                   </button>
                 </form>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filteredWatchlist.map((ticker) => {
-                  const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
-                  if (!stock || marketStatus.closed) {
-                    return (
-                      <div key={ticker} className="p-4 rounded-lg border border-slate-800/50 bg-slate-950/20 flex justify-between items-center opacity-70">
-                        <span className="font-mono font-bold text-slate-400">{ticker}</span>
-                        <span className="text-xs text-slate-500 font-mono">--</span>
-                      </div>
-                    );
-                  }
-                  const isPositive = stock.change >= 0;
-                  return (
-                    <div 
-                      key={ticker} 
-                      onClick={() => setSelectedTicker(ticker)}
-                      className={`p-4 rounded-lg border transition cursor-pointer ${
-                        selectedTicker === ticker 
-                          ? 'bg-slate-800/80 border-cyan-500' 
-                          : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <span className="font-mono font-bold text-lg">{ticker}</span>
-                          <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{stock.name}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-mono font-bold text-base">${stock.price.toFixed(2)}</p>
-                          <span className={`text-xs font-mono font-medium ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {isPositive ? '+' : ''}{stock.change.toFixed(2)}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* UPGRADED INTRADAY PRICE TELEMETRY STREAM CHART PANEL */}
-            {activeStock && !marketStatus.closed ? (
-              <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 space-y-4 animate-fadeIn">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Intraday Telemetry Stream</p>
-                  <h3 className="text-base font-semibold text-slate-200 mt-0.5">
-                    {selectedTicker} Trading Performance Grid
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Sourcing continuous 15-minute intervals for <span className="text-slate-300 font-medium">{activeStock.name}</span> over trading frame {selectedDate}.
-                  </p>
-                </div>
-
-                {/* Inline SVG Chart Implementation */}
-                <IntradayLineChart 
-                  ticker={selectedTicker} 
-                  basePrice={activeStock.price} 
-                  isPositive={activeStock.change >= 0} 
-                />
-
-                {/* Performance Metric Footer Badges */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
-                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                    <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
-                    <span className="text-slate-200 font-semibold">${(activeStock.price * 0.995).toFixed(2)}</span>
-                  </div>
-                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                    <span className="text-slate-500 block text-[10px] uppercase">Intraday Apex</span>
-                    <span className="text-emerald-400 font-semibold">${(activeStock.price * 1.012).toFixed(2)}</span>
-                  </div>
-                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                    <span className="text-slate-500 block text-[10px] uppercase">Intraday Trough</span>
-                    <span className="text-rose-400 font-semibold">${(activeStock.price * 0.984).toFixed(2)}</span>
-                  </div>
-                  <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
-                    <span className="text-slate-500 block text-[10px] uppercase">Relative Strength (RSI)</span>
-                    <span className="text-cyan-400 font-semibold">{activeStock.rsi || 50}</span>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5">
-              <h2 className="text-sm font-semibold text-slate-300 mb-4 uppercase tracking-wider">Simulated Execution Terminal</h2>
-              {activeStock && !marketStatus.closed ? (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
-                    <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
-                    <span className="text-sm text-slate-300 ml-2 font-mono">
-                      @ ${activeStock.price.toFixed(2)}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-400 whitespace-nowrap">Shares Volume:</label>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      value={tradeShares}
-                      onChange={(e) => setTradeShares(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-20 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-center font-mono focus:outline-none focus:border-cyan-500 text-white"
-                    />
-                  </div>
-
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <button 
-                      onClick={handleBuy}
-                      className="flex-1 sm:flex-none font-semibold bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
-                    >
-                      Buy Order
-                    </button>
-                    <button 
-                      onClick={handleSell}
-                      className="flex-1 sm:flex-none font-semibold bg-rose-600 hover:bg-rose-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
-                    >
-                      Sell Order
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 py-2">
-                  {marketStatus.closed ? "Orders suspended. Terminal execution fields are locked outside market operational frameworks." : "Select a symbol from your watchlist to access transaction fields."}
-                </p>
-              )}
-            </div>
-
-            <section id="analytics" className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Your Position Portfolio</h2>
-              {portfolio.length === 0 ? (
-                <p className="text-sm text-slate-500 py-4 text-center">No active stock holdings found. Expand your watchlist to begin.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm font-mono">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-400 text-xs">
-                        <th className="pb-2">Ticker</th>
-                        <th className="pb-2">Shares Owned</th>
-                        <th className="pb-2">Avg Buy Price</th>
-                        <th className="pb-2">Current Value</th>
-                        <th className="pb-2 text-right">Unrealized Net P&L</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60">
-                      {portfolio.map((pos) => {
-                        const currentPrice = marketStocks[pos.ticker]?.price || BASELINE_STOCKS[pos.ticker]?.price;
-                        const displayPrice = marketStatus.closed || !currentPrice ? '--' : `$${currentPrice.toFixed(2)}`;
-                        const pnl = marketStatus.closed || !currentPrice ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
-                        return (
-                          <tr key={pos.ticker} className="hover:bg-slate-800/30">
-                            <td className="py-3 font-bold text-slate-200">{pos.ticker}</td>
-                            <td className="py-3 text-slate-300">{pos.shares}</td>
-                            <td className="py-3 text-slate-400">${pos.avgBuyPrice.toFixed(2)}</td>
-                            <td className="py-3 font-semibold text-slate-200">{displayPrice}</td>
-                            <td className={`py-3 text-right font-bold ${pnl !== null && pnl >= 0 ? 'text-emerald-400' : pnl !== null ? 'text-rose-400' : 'text-slate-400'}`}>
-                              {pnl === null ? '--' : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </section>
           </div>
-
-          <section id="settings" className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 min-h-[300px]">
-              <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
-                <span className="text-purple-400">💡</span>
-                <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Cross-Market Diagnostics</h2>
-              </div>
-
-              {autopsyReport ? (
-                <div className="space-y-4">
-                  <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3 text-xs text-slate-300">
-                    Position liquidation completed on <strong className="text-rose-400">{autopsyReport.ticker}</strong> at a <span className="font-bold text-rose-400">{autopsyReport.dropPct}% loss</span>.
-                  </div>
-                  {autopsyReport.diagnostics.map((item, idx) => (
-                    <div key={idx} className="text-xs text-slate-300 bg-slate-950/60 p-3 rounded-lg border border-slate-800 leading-relaxed">
-                      {item.split('**').map((chunk, i) => i % 2 === 1 ? <strong key={i} className="text-cyan-400 font-semibold">{chunk}</strong> : chunk)}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="h-48 flex flex-col items-center justify-center text-center text-slate-500 text-xs p-4">
-                  <p>{marketStatus.closed ? "Terminal System Offline" : "Telemetry Engine Online..."}</p>
-                  <p className="text-slate-600 mt-2">
-                    {marketStatus.closed ? "Data ingestion pipelines are closed due to schedule limits. Adjust date settings above to simulate trading hours." : "Realized cross-market exits failing baseline profitability thresholds automatically execute analytical loss post-mortems here."}
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
 
       </div>
     </div>
