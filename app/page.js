@@ -76,8 +76,8 @@ const getGoodFriday = (year) => {
 
 const getObservedDate = (date) => {
   const day = date.getUTCDay();
-  if (day === 0) date.setUTCDate(date.getUTCDate() + 1); // Sun -> Mon
-  if (day === 6) date.setUTCDate(date.getUTCDate() - 1); // Sat -> Fri
+  if (day === 0) date.setUTCDate(date.getUTCDate() + 1); 
+  if (day === 6) date.setUTCDate(date.getUTCDate() - 1); 
   return date;
 };
 
@@ -104,9 +104,7 @@ const getMarketHolidaysForYear = (year) => {
   return holidaySet;
 };
 
-// --- MAIN EXPORTED FUNCTIONS ---
-
-// FIXED: Clean timezone parsing decoupled from local machine timezone offsets
+// Clean timezone parsing decoupled from local machine timezone offsets
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
@@ -153,7 +151,6 @@ const toNYTimeInputValue = (date) => {
 // Returns a safe fallback date (Latest Monday if today is a weekend) to prevent initial blackouts
 const getInitialOpenDateValue = () => {
   const d = new Date();
-  // Check if it's weekend, roll back to Friday if it is
   const day = d.getDay();
   if (day === 0) d.setDate(d.getDate() - 2);
   else if (day === 6) d.setDate(d.getDate() - 1);
@@ -221,7 +218,7 @@ export default function App() {
   const [mounted, setMounted] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
-  // FIXED: Initialized states to look at standard active market hours (10:00 AM NY Time) instead of your local midnight context
+  // Initialized states to look at standard active market hours (10:00 AM NY Time)
   const [selectedDate, setSelectedDate] = useState(() => getInitialOpenDateValue());
   const [selectedTime, setSelectedTime] = useState(() => "10:00");
   const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getInitialOpenDateValue());
@@ -272,7 +269,7 @@ export default function App() {
     return `${parsedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${parsedDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })}`;
   };
 
-  // FIXED: Adjusted logic elements to map index layouts safely to standard system views
+  // Adjusted logic elements to map index layouts safely to standard system views (Pulled ahead by 1 day)
   const getCalendarDays = (viewDate) => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -909,6 +906,50 @@ export default function App() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* DYNAMIC INTRADAY PRICE VISUALIZATION HUB */}
+            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 space-y-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Intraday Telemetry Stream</p>
+                <h3 className="text-base font-semibold text-slate-200 mt-0.5">
+                  {selectedTicker} Analytical Performance Matrix
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Monitoring real-time trading parameters for <span className="text-slate-300 font-medium">{(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.name}</span> inside the {selectedDate} timeframe.
+                </p>
+              </div>
+
+              <GenerateWidget height="450px">
+                ```json
+                {
+                  "widgetSpec": {
+                    "height": "450px",
+                    "prompt": "**Objective:** Render an elegant interactive stock line chart detailing price trends over a single day. \n **Data State:** Use current ticker symbol: \"AAPL\", asset name: \"Apple Inc.\", baseline price: 175.00, net change percent: 0.5. Allow inputs to pass distinct ticker values dynamically. \n **Strategy:** Standard Layout. \n **Inputs:** Volatility Index Factor (slider from 1 to 5, default 2), Timeframe Resolution (segmented picker: 5m, 15m, 1h, default 15m). \n **Visuals/Behavior:** Generate a seamless continuous path mimicking real-time 9:30 AM to 4:00 PM market intervals. Use a gradient filled area under the price line. Line color must change dynamically (emerald if change percentage is positive, rose color if negative). Display a floating crosshair element that follows the pointer coordinate values to trace price and timestamp positions dynamically along the chart grid."
+                  }
+                }
+                ```
+              </GenerateWidget>
+
+              {/* CONDITIONAL PRICE FOOTER TICKER STRIP */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
+                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                  <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
+                  <span className="text-slate-200 font-semibold">${((marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.price * 0.995).toFixed(2)}</span>
+                </div>
+                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                  <span className="text-slate-500 block text-[10px] uppercase">Intraday Apex</span>
+                  <span className="text-emerald-400 font-semibold">${((marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.price * 1.012).toFixed(2)}</span>
+                </div>
+                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                  <span className="text-slate-500 block text-[10px] uppercase">Intraday Trough</span>
+                  <span className="text-rose-400 font-semibold">${((marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.price * 0.984).toFixed(2)}</span>
+                </div>
+                <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
+                  <span className="text-slate-500 block text-[10px] uppercase">Relative Strength (RSI)</span>
+                  <span className="text-cyan-400 font-semibold">{(marketStocks[selectedTicker] || BASELINE_STOCKS[selectedTicker])?.rsi || 50}</span>
+                </div>
               </div>
             </div>
 
