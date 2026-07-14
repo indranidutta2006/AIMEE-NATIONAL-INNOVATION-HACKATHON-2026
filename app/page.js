@@ -127,12 +127,22 @@ const isMarketClosedForDate = (value, timeValue = '12:00') => {
   return minutes < 570 || minutes >= 960;
 };
 
-const toDateInputValue = (date) => {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const toNYDateInputValue = (date) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  const [{ value: month }, , { value: day }, , { value: year }] = formatter.formatToParts(date);
+  return `${year}-${month}-${day}`;
 };
 
-const toTimeInputValue = (date) => {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+const toNYTimeInputValue = (date) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  const [{ value: hour }, , { value: minute }] = formatter.formatToParts(date);
+  return `${hour}:${minute}`;
 };
 
 const getCurrentDateValue = () => toDateInputValue(new Date());
