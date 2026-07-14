@@ -494,7 +494,6 @@ export default function App() {
       setApiError('Ingestion limit reached. Utilizing cached parameters.');
       setLastExtractedAt(new Date());
       
-      // Explicitly protect layout maps using dynamic state memory copies
       setMarketStocks((prevStocks) => {
         if (prevStocks && Object.keys(prevStocks).length > 0) {
           return { ...prevStocks };
@@ -504,7 +503,6 @@ export default function App() {
     }
   }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
 
-  // SINGLE UNIFIED SCHEDULER: Duplicate loop has been entirely removed to prevent conflicts
   useEffect(() => {
     if (!mounted) return;
     
@@ -523,7 +521,6 @@ export default function App() {
         return; 
       }
 
-      // Safe conditional loop routing execution checks
       if (!isManualSim && rateLimitTimer === 0) {
         fetchMarketData(null, true);
       } else if (isManualSim) {
@@ -675,7 +672,7 @@ export default function App() {
         dropPct,
         buyPrice: position.avgBuyPrice,
         sellPrice: currentStock.price,
-        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the {currentStock.exchange} theater impacted this position exit.`]
+        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange} theater impacted this position exit.`]
       });
     }
 
@@ -704,12 +701,26 @@ export default function App() {
     return region === selectedExchangeFilter;
   });
 
+  // Extract explicit lists for standalone parallel summaries
+  const usStocksList = watchlist.filter(t => (marketStocks[t]?.exchange || detectExchangeRegion(t)) === 'US');
+  const indiaStocksList = watchlist.filter(t => (marketStocks[t]?.exchange || detectExchangeRegion(t)) === 'India');
+
   const activeStock = marketStocks[selectedTicker];
 
   if (!mounted) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">Loading Global Ingestion Matrix...</div>;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6 font-sans">
+      {feedbackMsg && (
+        <div className={`fixed bottom-4 right-4 z-50 rounded-xl border p-4 shadow-2xl backdrop-blur ${
+          feedbackMsg.type === 'success' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' :
+          feedbackMsg.type === 'warning' ? 'bg-amber-500/10 border-amber-500 text-amber-400' :
+          'bg-cyan-500/10 border-cyan-500 text-cyan-400'
+        }`}>
+          {feedbackMsg.text}
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto space-y-6">
         
         <section id="overview">
@@ -865,6 +876,53 @@ export default function App() {
           </header>
         </section>
 
+        {/* --- REGIONAL MARKET HEADERS SECTION (US & INDIA SIDE-BY-SIDE SUMMARY) --- */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-2">
+                <span>🇺🇸</span> US Market Index Feed
+              </h3>
+              <span className="text-[10px] font-mono text-slate-500">TwelveData Free Tier</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {usStocksList.slice(0, 4).map(ticker => {
+                const stock = marketStocks[ticker];
+                return (
+                  <div key={ticker} onClick={() => setSelectedTicker(ticker)} className="bg-slate-950/60 p-2 rounded border border-slate-800/60 cursor-pointer hover:border-slate-700 flex justify-between items-center">
+                    <span className="font-mono text-xs font-bold text-slate-300">{ticker}</span>
+                    <span className={`text-xs font-mono font-bold ${stock?.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      ${stock ? stock.price.toFixed(1) : '--'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-orange-400 flex items-center gap-2">
+                <span>🇮🇳</span> Indian Market Hub (NSE)
+              </h3>
+              <span className="text-[10px] font-mono text-slate-500">TwelveData Free Tier (.NSE)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {indiaStocksList.map(ticker => {
+                const stock = marketStocks[ticker];
+                return (
+                  <div key={ticker} onClick={() => setSelectedTicker(ticker)} className="bg-slate-950/60 p-2 rounded border border-slate-800/60 cursor-pointer hover:border-slate-700 flex justify-between items-center">
+                    <span className="font-mono text-xs font-bold text-slate-300">{ticker.split('.')[0]}</span>
+                    <span className={`text-xs font-mono font-bold ${stock?.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      ₹{stock ? stock.price.toFixed(1) : '--'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
         <section id="watchlist">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
@@ -878,7 +936,7 @@ export default function App() {
                     : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
                 }`}
               >
-                {exchange === 'ALL' ? '🌍 Global Universe' : exchange}
+                {exchange === 'ALL' ? '🌍 Global Universe' : exchange === 'India' ? '🇮🇳 India Market' : exchange}
               </button>
             ))}
           </div>
@@ -953,6 +1011,7 @@ export default function App() {
                     );
                   }
                   const isPositive = stock.change >= 0;
+                  const isIndia = stock.exchange === 'India';
                   return (
                     <div 
                       key={ticker} 
@@ -965,11 +1024,16 @@ export default function App() {
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <span className="font-mono font-bold text-lg">{ticker}</span>
+                          <span className="font-mono font-bold text-lg flex items-center gap-1.5">
+                            {ticker}
+                            {isIndia && <span className="text-[10px] bg-orange-500/10 text-orange-400 px-1.5 py-0.2 rounded border border-orange-500/20">NSE</span>}
+                          </span>
                           <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{stock.name}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-mono font-bold text-base">${stock.price.toFixed(2)}</p>
+                          <p className="font-mono font-bold text-base">
+                            {isIndia ? '₹' : '$'}{stock.price.toFixed(2)}
+                          </p>
                           <span className={`text-xs font-mono font-medium ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {isPositive ? '+' : ''}{stock.change.toFixed(2)}%
                           </span>
@@ -1002,15 +1066,15 @@ export default function App() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Opening Print</span>
-                    <span className="text-slate-200 font-semibold">${(activeStock.price * 0.995).toFixed(2)}</span>
+                    <span className="text-slate-200 font-semibold">{activeStock.exchange === 'India' ? '₹' : '$'}{(activeStock.price * 0.995).toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Intraday Apex</span>
-                    <span className="text-emerald-400 font-semibold">${(activeStock.price * 1.012).toFixed(2)}</span>
+                    <span className="text-emerald-400 font-semibold">{activeStock.exchange === 'India' ? '₹' : '$'}{(activeStock.price * 1.012).toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Intraday Trough</span>
-                    <span className="text-rose-400 font-semibold">${(activeStock.price * 0.984).toFixed(2)}</span>
+                    <span className="text-rose-400 font-semibold">{activeStock.exchange === 'India' ? '₹' : '$'}{(activeStock.price * 0.984).toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/40">
                     <span className="text-slate-500 block text-[10px] uppercase">Relative Strength (RSI)</span>
@@ -1028,7 +1092,7 @@ export default function App() {
                     <span className="text-xs text-slate-400 block mb-1">Target Trading Instrument</span>
                     <span className="text-lg font-bold font-mono text-cyan-400">{selectedTicker}</span>
                     <span className="text-sm text-slate-300 ml-2 font-mono">
-                      @ ${activeStock.price.toFixed(2)}
+                      @ {activeStock.exchange === 'India' ? '₹' : '$'}{activeStock.price.toFixed(2)}
                     </span>
                   </div>
                   
@@ -1084,13 +1148,14 @@ export default function App() {
                     <tbody className="divide-y divide-slate-800/60">
                       {portfolio.map((pos) => {
                         const currentPrice = marketStocks[pos.ticker]?.price;
-                        const displayPrice = marketStatus.closed || !currentPrice ? '--' : `$${currentPrice.toFixed(2)}`;
+                        const isInd = marketStocks[pos.ticker]?.exchange === 'India';
+                        const displayPrice = marketStatus.closed || !currentPrice ? '--' : `${isInd ? '₹' : '$'}${currentPrice.toFixed(2)}`;
                         const pnl = marketStatus.closed || !currentPrice ? null : (currentPrice - pos.avgBuyPrice) * pos.shares;
                         return (
                           <tr key={pos.ticker} className="hover:bg-slate-800/30">
                             <td className="py-3 font-bold text-slate-200">{pos.ticker}</td>
                             <td className="py-3 text-slate-300">{pos.shares}</td>
-                            <td className="py-3 text-slate-400">${pos.avgBuyPrice.toFixed(2)}</td>
+                            <td className="py-3 text-slate-400">{isInd ? '₹' : '$'}{pos.avgBuyPrice.toFixed(2)}</td>
                             <td className="py-3 font-semibold text-slate-200">{displayPrice}</td>
                             <td className={`py-3 text-right font-bold ${pnl !== null && pnl >= 0 ? 'text-emerald-400' : pnl !== null ? 'text-rose-400' : 'text-slate-400'}`}>
                               {pnl === null ? '--' : `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`}
