@@ -279,7 +279,6 @@ export default function App() {
   const [cash, setCash] = useState(100000.00); 
   const [cashInput, setCashInput] = useState("100000.00"); 
   const [watchlist, setWatchlist] = useState(TOP_15_COMPANIES); 
-  // Initialized with baseline state safely, but never reverted back to it if network cuts out
   const [marketStocks, setMarketStocks] = useState(() => BASELINE_STOCKS);
   const [selectedExchangeFilter, setSelectedExchangeFilter] = useState('ALL'); 
   const [portfolio, setPortfolio] = useState([
@@ -373,37 +372,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-  if (!mounted) return;
-  
-  if (isMarketClosedForDate(selectedDate, selectedTime)) {
-    setMarketStatus({ closed: true, message: 'Market is currently closed.' });
-    setApiMode('Closed Terminal');
-  } else {
-    setMarketStatus({ closed: false, message: '' });
-    fetchMarketData();
-  }
+    if (!mounted) return;
+    localStorage.setItem('apex_cash', cash.toString());
+    localStorage.setItem('apex_portfolio', JSON.stringify(portfolio));
+    localStorage.setItem('apex_watchlist', JSON.stringify(watchlist));
+  }, [cash, portfolio, watchlist, mounted]);
 
-  const activeInterval = setInterval(() => {
-    if (isMarketClosedForDate(selectedDate, selectedTime)) {
-      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
-      setApiMode('Closed Terminal');
-      return; 
+  const triggerNotification = (message, type = 'info') => {
+    setFeedbackMsg({ text: message, type });
+    setTimeout(() => setFeedbackMsg(null), 5000);
+  };
+
+  const saveCache = (data) => {
+    try {
+      const cacheObj = { timestamp: Date.now(), stocks: data };
+      sessionStorage.setItem('apex_market_cache', JSON.stringify(cacheObj));
+    } catch (e) {
+      console.warn(e);
     }
-
-    // ONLY fetch or simulate if we aren't trapped in a pipeline error state
-    if (!isManualSim && rateLimitTimer === 0) {
-      // If we are already in an error state, don't keep hammering the API or drifting text; lock it down.
-      if (apiMode !== 'Simulation (Pipeline Issue)') {
-        fetchMarketData(null, true);
-      }
-    } else if (isManualSim) {
-      // Only execute random drift if the user explicitly turned on the Sandbox Sim Toggle
-      runSimulationTickMemoized();
-    }
-  }, 15000);
-
-  return () => clearInterval(activeInterval);
-}, [mounted, fetchMarketData, apiMode, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
+  };
 
   const parseTwelveDataQuotes = (data) => {
     if (!data || data.status === 'error' || data.code >= 400) return null;
@@ -487,7 +474,7 @@ export default function App() {
       const response = await fetch(`/api/market-data?date=${encodeURIComponent(selectedDateValue)}&time=${encodeURIComponent(selectedTimeValue)}&symbols=${encodeURIComponent(symbolsToFetch.join(','))}`);
       const payload = await response.json();
 
-      if (payload.stocks) {
+      if (payload && payload.stocks) {
         const structuralMap = {};
         Object.keys(payload.stocks).forEach(sym => {
           structuralMap[sym] = {
@@ -506,10 +493,18 @@ export default function App() {
       setApiMode('Simulation (Pipeline Issue)');
       setApiError('Ingestion limit reached. Utilizing cached parameters.');
       setLastExtractedAt(new Date());
-      // Explicitly preserving the prior state; no baseline mapping execution
+      
+      // Explicitly lock down the state value maps using immutable layout generation updates
+      setMarketStocks((prevStocks) => {
+        if (prevStocks && Object.keys(prevStocks).length > 0) {
+          return { ...prevStocks };
+        }
+        return { ...BASELINE_STOCKS };
+      });
     }
   }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
 
+  // Clean unified execution scheduler tracking loop
   useEffect(() => {
     if (!mounted) return;
     
@@ -528,46 +523,43 @@ export default function App() {
         return; 
       }
 
-      if (apiMode === 'TwelveData' && !isManualSim && rateLimitTimer === 0) {
+      // Live mode processing recovery loop pipelines
+      if (!isManualSim && rateLimitTimer === 0) {
         fetchMarketData(null, true);
-      } else {
+      } else if (isManualSim) {
         runSimulationTickMemoized();
       }
     }, 15000);
 
     return () => clearInterval(activeInterval);
-  }, [mounted, fetchMarketData, apiMode, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
+  }, [mounted, fetchMarketData, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
 
   useEffect(() => {
-  if (!mounted) return;
-  
-  if (isMarketClosedForDate(selectedDate, selectedTime)) {
-    setMarketStatus({ closed: true, message: 'Market is currently closed.' });
-    setApiMode('Closed Terminal');
-  } else {
-    setMarketStatus({ closed: false, message: '' });
-    fetchMarketData();
-  }
+    const interval = setInterval(() => {
+      if (refreshCooldown > 0) setRefreshCooldown(prev => prev - 1);
+      if (rateLimitTimer > 0) setRateLimitTimer(prev => prev - 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [refreshCooldown, rateLimitTimer]);
 
-  const activeInterval = setInterval(() => {
-    if (isMarketClosedForDate(selectedDate, selectedTime)) {
-      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
-      setApiMode('Closed Terminal');
-      return; 
+  const handleCalendarDateSelect = (dateValue) => {
+    setCalendarSelectionDate(dateValue);
+    setCalendarViewDate(new Date(`${dateValue}T12:00:00`));
+  };
+
+  const confirmSelectedDate = () => {
+    const nextDate = calendarSelectionDate;
+    const nextTime = calendarSelectionTime;
+    setSelectedDate(nextDate);
+    setSelectedTime(nextTime);
+    playbackClockRef.current = new Date(`${nextDate}T${nextTime}`);
+    
+    if (!isMarketClosedForDate(nextDate, nextTime)) {
+      setMarketStatus({ closed: false, message: '' });
     }
+    fetchMarketData(null, true, nextDate, nextTime);
+  };
 
-    // Live mode: Keep trying to recover the API in the background even if the pipeline fails
-    if (!isManualSim && rateLimitTimer === 0) {
-      fetchMarketData(null, true);
-    } else if (isManualSim) {
-      // Only drift prices if manual simulation is explicitly toggled on
-      runSimulationTickMemoized();
-    }
-  }, 15000);
-
-  return () => clearInterval(activeInterval);
-  // apiMode has been removed from the dependency array so the loop doesn't deadlock
-}, [mounted, fetchMarketData, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
   const updateTimeField = (field, direction) => {
     const nextTime = getAdjustedTimeValue(calendarSelectionTime, field, direction);
     setCalendarSelectionTime(nextTime);
@@ -698,8 +690,8 @@ export default function App() {
 
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
     if (marketStatus.closed) return 0; 
-    const currentPrice = marketStocks[curr.ticker]?.price || curr.avgBuyPrice;
-    return acc + (curr.shares * currentPrice);
+    const currentPrice = marketStocks[curr.ticker]?.price;
+    return acc + (curr.shares * (currentPrice || curr.avgBuyPrice));
   }, 0);
 
   const netWorth = cash + totalPortfolioValue;
