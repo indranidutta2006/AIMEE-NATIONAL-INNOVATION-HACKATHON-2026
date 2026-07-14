@@ -13,94 +13,92 @@ const BASELINE_STOCKS = {
   '7203.T': { name: 'Toyota Motor Corp (TSE)', price: 3400.00, change: -0.3, rsi: 48, volume: 'Low', exchange: 'Asia' },
 };
 
-const MARKET_HOLIDAYS = new Set([
-  '2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25',
-  '2026-06-19', '2026-07-04', '2026-09-07', '2026-11-26', '2026-12-25',
-]);
+// A cache to ensure we only calculate a year's holidays ONCE across the app lifecycle
+const holidayCache = new Map();
+
+// --- HELPER FUNCTIONS ---
+
+const getNthWeekdayOfMonth = (year, month, dayOfWeek, n) => {
+  let count = 0;
+  const date = new Date(Date.UTC(year, month, 1));
+  while (date.getUTCMonth() === month) {
+    if (date.getUTCDay() === dayOfWeek) {
+      count++;
+      if (count === n) return date;
+    }
+    date.setUTCDate(date.getUTCDate() + 1);
+  }
+  return null;
+};
+
+const getLastWeekdayOfMonth = (year, month, dayOfWeek) => {
+  const date = new Date(Date.UTC(year, month + 1, 0));
+  while (date.getUTCDay() !== dayOfWeek) {
+    date.setUTCDate(date.getUTCDate() - 1);
+  }
+  return date;
+};
+
+const getGoodFriday = (year) => {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  
+  const easter = new Date(Date.UTC(year, month, day));
+  easter.setUTCDate(easter.getUTCDate() - 2);
+  return easter;
+};
+
+const getObservedDate = (date) => {
+  const day = date.getUTCDay();
+  if (day === 0) date.setUTCDate(date.getUTCDate() + 1); // Sun -> Mon
+  if (day === 6) date.setUTCDate(date.getUTCDate() - 1); // Sat -> Fri
+  return date;
+};
+
+const getMarketHolidaysForYear = (year) => {
+  if (holidayCache.has(year)) {
+    return holidayCache.get(year);
+  }
+
+  const holidays = [
+    getObservedDate(new Date(Date.UTC(year, 0, 1))),   // New Year's Day
+    getNthWeekdayOfMonth(year, 0, 1, 3),              // MLK Jr. Day (3rd Monday)
+    getNthWeekdayOfMonth(year, 1, 1, 3),              // Presidents' Day (3rd Monday)
+    getGoodFriday(year),                              // Good Friday
+    getLastWeekdayOfMonth(year, 4, 1),                // Memorial Day (Last Monday)
+    getObservedDate(new Date(Date.UTC(year, 5, 19))), // Juneteenth
+    getObservedDate(new Date(Date.UTC(year, 6, 4))),  // Independence Day
+    getNthWeekdayOfMonth(year, 8, 1, 1),              // Labor Day (1st Monday)
+    getNthWeekdayOfMonth(year, 10, 4, 4),             // FIXED: Thanksgiving (4th Thursday)
+    getObservedDate(new Date(Date.UTC(year, 11, 25))),// Christmas Day
+  ];
+
+  const holidaySet = new Set(holidays.map(d => d.toISOString().split('T')[0]));
+  holidayCache.set(year, holidaySet);
+  return holidaySet;
+};
+
+// --- MAIN EXPORTED FUNCTIONS ---
 
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
+  // Force JS to parse the string cleanly as a baseline representation
   const parsedDate = new Date(`${value}T${timeValue}`);
   if (Number.isNaN(parsedDate.getTime())) return true;
 
-  // --- HELPER FUNCTIONS ---
-
-  // Calculate the Nth occurrence of a specific weekday in a month (e.g., 3rd Monday of Jan)
-  // dayOfWeek: 0 = Sunday, 1 = Monday, etc. Month is 0-indexed.
-  const getNthWeekdayOfMonth = (year, month, dayOfWeek, n) => {
-    let count = 0;
-    const date = new Date(Date.UTC(year, month, 1));
-    while (date.getUTCMonth() === month) {
-      if (date.getUTCDay() === dayOfWeek) {
-        count++;
-        if (count === n) return date;
-      }
-      date.setUTCDate(date.getUTCDate() + 1);
-    }
-    return null;
-  };
-
-  // Get the last occurrence of a weekday in a month (e.g., Memorial Day)
-  const getLastWeekdayOfMonth = (year, month, dayOfWeek) => {
-    const date = new Date(Date.UTC(year, month + 1, 0)); // Last day of month
-    while (date.getUTCDay() !== dayOfWeek) {
-      date.setUTCDate(date.getUTCDate() - 1);
-    }
-    return date;
-  };
-
-  // Gauss's Easter Algorithm to find Good Friday
-  const getGoodFriday = (year) => {
-    const a = year % 19;
-    const b = Math.floor(year / 100);
-    const c = year % 100;
-    const d = Math.floor(b / 4);
-    const e = b % 4;
-    const f = Math.floor((b + 8) / 25);
-    const g = Math.floor((b - f + 1) / 3);
-    const h = (19 * a + b - d - g + 15) % 30;
-    const i = Math.floor(c / 4);
-    const k = c % 4;
-    const l = (32 + 2 * e + 2 * i - h - k) % 7;
-    const m = Math.floor((a + 11 * h + 22 * l) / 451);
-    const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
-    const day = ((h + l - 7 * m + 114) % 31) + 1;
-    
-    const easter = new Date(Date.UTC(year, month, day));
-    easter.setUTCDate(easter.getUTCDate() - 2); // Good Friday is 2 days before Easter
-    return easter;
-  };
-
-  // Adjusts fixed-date holidays if they fall on a weekend
-  const getObservedDate = (date) => {
-    const day = date.getUTCDay();
-    if (day === 0) date.setUTCDate(date.getUTCDate() + 1); // Sunday -> Monday
-    if (day === 6) date.setUTCDate(date.getUTCDate() - 1); // Saturday -> Friday
-    return date;
-  };
-
-  // Generates a Set of YYYY-MM-DD strings for a given year's market holidays
-  const getMarketHolidaysForYear = (year) => {
-    const holidays = [
-      getObservedDate(new Date(Date.UTC(year, 0, 1))),   // New Year's Day
-      getNthWeekdayOfMonth(year, 0, 1, 3),              // MLK Jr. Day (3rd Monday in Jan)
-      getNthWeekdayOfMonth(year, 1, 1, 3),              // Presidents' Day (3rd Monday in Feb)
-      getGoodFriday(year),                              // Good Friday
-      getLastWeekdayOfMonth(year, 4, 1),                // Memorial Day (Last Monday in May)
-      getObservedDate(new Date(Date.UTC(year, 5, 19))), // Juneteenth
-      getObservedDate(new Date(Date.UTC(year, 6, 4))),  // Independence Day
-      getNthWeekdayOfMonth(year, 8, 1, 1),              // Labor Day (1st Monday in Sep)
-      getNthWeekdayOfMonth(year, 10, 1, 4),             // Thanksgiving (4th Thursday in Nov)
-      getObservedDate(new Date(Date.UTC(year, 11, 25))),// Christmas Day
-    ];
-
-    return new Set(holidays.map(d => d.toISOString().split('T')[0]));
-  };
-
-  // --- MAIN EXECUTION LOGIC ---
-
-  // Convert incoming date strictly to New York Time parts
   const nyFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -145,8 +143,8 @@ const toNYTimeInputValue = (date) => {
   return `${hour}:${minute}`;
 };
 
-const getCurrentDateValue = () => toDateInputValue(new Date());
-const getCurrentTimeValue = () => toTimeInputValue(new Date());
+const getCurrentDateValue = () => toNYDateInputValue(new Date());
+const getCurrentTimeValue = () => toNYTimeInputValue(new Date());
 
 const isValidTimeValue = (value) => {
   if (!value || !/^\d{2}:\d{2}$/.test(value)) return false;
@@ -172,12 +170,13 @@ const normalizeTimeValue = (value) => {
   
   return `${hours}:${minutes}`;
 };
+
 const getAdjustedTimeValue = (value, field, direction) => {
   const [hours, minutes] = value.split(':').map(Number);
   const next = new Date(2000, 0, 1, hours, minutes);
   next.setMinutes(next.getMinutes() + (field === 'minute' ? direction * 1 : 0));
   next.setHours(next.getHours() + (field === 'hour' ? direction * 1 : 0));
-  return toTimeInputValue(next);
+  return toNYTimeInputValue(next); // FIXED reference
 };
 
 export default function App() {
