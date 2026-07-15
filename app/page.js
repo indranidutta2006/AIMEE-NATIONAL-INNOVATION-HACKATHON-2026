@@ -1,29 +1,29 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 const TOP_15_COMPANIES = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
-  'META', 'TSLA', 'BRK.A', 'V', 'JPM', 
-  'INFY.NSE', 'TCS.NSE', 'RELIANCE.NSE', 'HDFCBANK.NSE', 'BARC.LSE'
+  'META', 'TSLA', 'BRK.A', 'V', 'JPM',
+  'AMD', 'NFLX', 'DIS', 'COST', 'WMT'
 ];
 
 const BASELINE_STOCKS = {
-  'AAPL': { name: 'Apple Inc. (NASDAQ)', price: 175.00, change: 0.5, rsi: 72, volume: 'High', exchange: 'US' },
-  'MSFT': { name: 'Microsoft Corp (NASDAQ)', price: 420.00, change: 1.1, rsi: 65, volume: 'High', exchange: 'US' },
-  'GOOGL': { name: 'Alphabet Inc. (NASDAQ)', price: 170.00, change: -0.4, rsi: 48, volume: 'Normal', exchange: 'US' },
-  'AMZN': { name: 'Amazon.com Inc (NASDAQ)', price: 180.00, change: 0.8, rsi: 55, volume: 'High', exchange: 'US' },
-  'NVDA': { name: 'NVIDIA Corp (NASDAQ)', price: 850.00, change: 3.2, rsi: 78, volume: 'Extreme', exchange: 'US' },
-  'META': { name: 'Meta Platforms (NASDAQ)', price: 490.00, change: -1.5, rsi: 42, volume: 'Normal', exchange: 'US' },
-  'TSLA': { name: 'Tesla Inc (NASDAQ)', price: 175.00, change: -2.0, rsi: 35, volume: 'High', exchange: 'US' },
-  'BRK.A': { name: 'Berkshire Hathaway (NYSE)', price: 610000.00, change: 0.1, rsi: 50, volume: 'Low', exchange: 'US' },
-  'V': { name: 'Visa Inc. (NYSE)', price: 275.00, change: 0.3, rsi: 52, volume: 'Normal', exchange: 'US' },
-  'JPM': { name: 'JPMorgan Chase & Co (NYSE)', price: 195.00, change: 0.6, rsi: 58, volume: 'Normal', exchange: 'US' },
-  'INFY.NSE': { name: 'Infosys Limited (NSE)', price: 1420.00, change: -1.2, rsi: 38, volume: 'Extreme', exchange: 'India' },
-  'TCS.NSE': { name: 'Tata Consultancy Services (NSE)', price: 3900.00, change: 0.4, rsi: 51, volume: 'Normal', exchange: 'India' },
-  'RELIANCE.NSE': { name: 'Reliance Industries (NSE)', price: 2950.00, change: 1.5, rsi: 63, volume: 'High', exchange: 'India' },
-  'HDFCBANK.NSE': { name: 'HDFC Bank Ltd (NSE)', price: 1510.00, change: -0.8, rsi: 44, volume: 'High', exchange: 'India' },
-  'BARC.LSE': { name: 'Barclays PLC (LSE)', price: 185.00, change: 2.4, rsi: 81, volume: 'Normal', exchange: 'Europe' }
+  'AAPL': { name: 'Apple Inc. (NASDAQ)', price: 175.00, change: 0.5, rsi: 72, volume: 'High' },
+  'MSFT': { name: 'Microsoft Corp (NASDAQ)', price: 420.00, change: 1.1, rsi: 65, volume: 'High' },
+  'GOOGL': { name: 'Alphabet Inc. (NASDAQ)', price: 170.00, change: -0.4, rsi: 48, volume: 'Normal' },
+  'AMZN': { name: 'Amazon.com Inc (NASDAQ)', price: 180.00, change: 0.8, rsi: 55, volume: 'High' },
+  'NVDA': { name: 'NVIDIA Corp (NASDAQ)', price: 850.00, change: 3.2, rsi: 78, volume: 'Extreme' },
+  'META': { name: 'Meta Platforms (NASDAQ)', price: 490.00, change: -1.5, rsi: 42, volume: 'Normal' },
+  'TSLA': { name: 'Tesla Inc (NASDAQ)', price: 175.00, change: -2.0, rsi: 35, volume: 'High' },
+  'BRK.A': { name: 'Berkshire Hathaway (NYSE)', price: 610000.00, change: 0.1, rsi: 50, volume: 'Low' },
+  'V': { name: 'Visa Inc. (NYSE)', price: 275.00, change: 0.3, rsi: 52, volume: 'Normal' },
+  'JPM': { name: 'JPMorgan Chase & Co (NYSE)', price: 195.00, change: 0.6, rsi: 58, volume: 'Normal' },
+  'AMD': { name: 'Advanced Micro Devices (NASDAQ)', price: 180.00, change: 1.4, rsi: 60, volume: 'High' },
+  'NFLX': { name: 'Netflix Inc. (NASDAQ)', price: 610.00, change: -0.5, rsi: 45, volume: 'Normal' },
+  'DIS': { name: 'Walt Disney Co (NYSE)', price: 115.00, change: 0.2, rsi: 49, volume: 'Normal' },
+  'COST': { name: 'Costco Wholesale (NASDAQ)', price: 725.00, change: 0.9, rsi: 57, volume: 'Normal' },
+  'WMT': { name: 'Walmart Inc. (NYSE)', price: 60.00, change: -0.1, rsi: 51, volume: 'Normal' }
 };
 
 const holidayCache = new Map();
@@ -165,16 +165,29 @@ const convert12to24Hour = (h12, min, ampm) => {
   return `${String(h).padStart(2, '0')}:${min}`;
 };
 
+const getAdjustedTimeValue = (currentTime, field, direction) => {
+  const [hStr, mStr] = currentTime.split(':');
+  let h = parseInt(hStr, 10);
+  let m = parseInt(mStr, 10);
+
+  if (field === 'hour') {
+    h = (h + direction + 24) % 24;
+  } else if (field === 'minute') {
+    m = (m + direction + 60) % 60;
+  }
+
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
 export default function App() {
   // --- STATE MANAGEMENT ---
   const [cash, setCash] = useState(100000.00); 
   const [cashInput, setCashInput] = useState("100000.00"); 
   const [watchlist, setWatchlist] = useState(TOP_15_COMPANIES); 
   const [marketStocks, setMarketStocks] = useState({});
-  const [selectedExchangeFilter, setSelectedExchangeFilter] = useState('ALL'); 
   const [portfolio, setPortfolio] = useState([
     { ticker: 'AAPL', shares: 10, avgBuyPrice: 185.00 }, 
-    { ticker: 'INFY.NSE', shares: 25, avgBuyPrice: 1450.00 }
+    { ticker: 'MSFT', shares: 5, avgBuyPrice: 410.00 }
   ]);
   const [selectedTicker, setSelectedTicker] = useState('AAPL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -186,25 +199,16 @@ export default function App() {
   const [mounted, setMounted] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
-  // Requirement Fulfilled: Decoupled to follow current local system time loaded in NY context automatically
   const [selectedDate, setSelectedDate] = useState(() => toNYDateInputValue(new Date()));
   const [selectedTime, setSelectedTime] = useState(() => toNYTimeInputValue(new Date()));
   const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => toNYDateInputValue(new Date()));
   const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => toNYTimeInputValue(new Date()));
-  const [timeInputDraft, setTimeInputDraft] = useState(() => toNYTimeInputValue(new Date()));
   
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState({ closed: false, message: '' });
   const [activeMenuItem, setActiveMenuItem] = useState('Overview');
   const dashboardMenuItems = ['Overview', 'Watchlist', 'Portfolio', 'Analytics', 'Settings'];
-
-  const detectExchangeRegion = (symbol) => {
-    if (symbol.endsWith('.NSE') || symbol.endsWith('.BSE')) return 'India';
-    if (symbol.endsWith('.LSE') || symbol.endsWith('.PA') || symbol.endsWith('.DE')) return 'Europe';
-    if (symbol.endsWith('.T') || symbol.endsWith('.HK') || symbol.endsWith('.SS')) return 'Asia';
-    return 'US'; 
-  };
 
   const formatSelectedDate = (value) => {
     if (!value) return 'No date selected';
@@ -218,7 +222,6 @@ export default function App() {
     return `${parsedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${parsedDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
   };
 
-  // Fixed: Calendar days display now perfectly matches structural Sunday headers
   const getCalendarDays = (viewDate) => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -271,7 +274,7 @@ export default function App() {
       
       Object.keys(updated).forEach((ticker) => {
         if (!updated[ticker]) {
-          updated[ticker] = { name: `${ticker} Instrument`, price: 250.00, change: 0, rsi: 50, volume: 'Normal', exchange: detectExchangeRegion(ticker) };
+          updated[ticker] = { name: `${ticker} US Corp.`, price: 250.00, change: 0, rsi: 50, volume: 'Normal' };
         }
         const percentChange = (Math.random() * 1.6 - 0.8) / 100;
         updated[ticker].price = Math.max(1, +(updated[ticker].price * (1 + percentChange)).toFixed(2));
@@ -306,7 +309,7 @@ export default function App() {
       if (payload.stocks) {
         const structuralMap = {};
         Object.keys(payload.stocks).forEach(sym => {
-          structuralMap[sym] = { ...payload.stocks[sym], exchange: detectExchangeRegion(sym) };
+          structuralMap[sym] = { ...payload.stocks[sym] };
         });
         setMarketStatus({ closed: false, message: '' });
         setMarketStocks(structuralMap);
@@ -321,7 +324,6 @@ export default function App() {
     }
   }, [watchlist, portfolio, isManualSim, selectedDate, selectedTime, runSimulationTick]);
 
-  // Fixed rendering loops: apiMode safely isolated from update hooks
   useEffect(() => {
     if (!mounted) return;
     
@@ -371,7 +373,6 @@ export default function App() {
   const updateTimeField = (field, direction) => {
     const nextTime = getAdjustedTimeValue(calendarSelectionTime, field, direction);
     setCalendarSelectionTime(nextTime);
-    setTimeInputDraft(nextTime);
   };
 
   const toggleAMPM = () => {
@@ -379,7 +380,6 @@ export default function App() {
     const nextAmpm = ampm === 'AM' ? 'PM' : 'AM';
     const nextTime = convert12to24Hour(hour12, minute, nextAmpm);
     setCalendarSelectionTime(nextTime);
-    setTimeInputDraft(nextTime);
   };
 
   const handleCashUpdate = (val) => {
@@ -410,12 +410,12 @@ export default function App() {
     const simulatedPrice = +(Math.random() * 800 + 50).toFixed(2);
     setMarketStocks((prev) => ({
       ...prev,
-      [symbol]: { name: `${symbol} Global Equities Corp.`, price: simulatedPrice, change: 0, rsi: 50, volume: 'Normal', exchange: detectExchangeRegion(symbol) }
+      [symbol]: { name: `${symbol} US Equities Corp.`, price: simulatedPrice, change: 0, rsi: 50, volume: 'Normal' }
     }));
     setWatchlist((prev) => [...prev, symbol]);
     setSelectedTicker(symbol);
     setSearchQuery('');
-    triggerNotification(`Added ${symbol} into Global Sandboxed Engine!`, 'success');
+    triggerNotification(`Added ${symbol} into US Sandboxed Engine!`, 'success');
   };
 
   const handleBuy = () => {
@@ -425,7 +425,7 @@ export default function App() {
     const totalCost = currentStock.price * tradeShares;
 
     if (cash < totalCost) {
-      triggerNotification('Insufficient simulated global funds!', 'error');
+      triggerNotification('Insufficient simulated funds!', 'error');
       return;
     }
 
@@ -441,7 +441,7 @@ export default function App() {
       }
       return [...prevPortfolio, { ticker: selectedTicker, shares: tradeShares, avgBuyPrice: currentStock.price }];
     });
-    triggerNotification(`Bought ${tradeShares} shares of global security ${selectedTicker}!`, 'success');
+    triggerNotification(`Bought ${tradeShares} shares of US security ${selectedTicker}!`, 'success');
   };
 
   const handleSell = () => {
@@ -463,7 +463,7 @@ export default function App() {
         dropPct,
         buyPrice: position.avgBuyPrice,
         sellPrice: currentStock.price,
-        diagnostics: [`⚠️ **Global Macro Rotation Trap:** Realized rotation across the ${currentStock.exchange || detectExchangeRegion(selectedTicker)} theater impacted this position exit.`]
+        diagnostics: [`⚠️ **US Macro Dynamic Trap:** Capital variations across standard US trading sectors impacted this position exit.`]
       });
     }
 
@@ -495,14 +495,7 @@ export default function App() {
   const calendarDays = getCalendarDays(calendarViewDate);
   const time12Fields = convert24to12Hour(calendarSelectionTime);
 
-  const filteredWatchlist = watchlist.filter(ticker => {
-    if (selectedExchangeFilter === 'ALL') return true;
-    const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
-    const region = stock?.exchange || detectExchangeRegion(ticker);
-    return region === selectedExchangeFilter;
-  });
-
-  if (!mounted) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">Loading Global Ingestion Matrix...</div>;
+  if (!mounted) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">Loading US Ingestion Matrix...</div>;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6 font-sans">
@@ -519,7 +512,7 @@ export default function App() {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Dashboard Navigation</p>
-                  <h1 className="text-2xl font-semibold text-slate-100">ApexTrader Global Dashboard</h1>
+                  <h1 className="text-2xl font-semibold text-slate-100">ApexTrader US Dashboard</h1>
                   <p className="text-sm text-slate-400">Quick access to watchlists, portfolio, analytics and actionable controls.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -544,7 +537,7 @@ export default function App() {
             <div className="sticky top-[92px] z-40 rounded-2xl border border-cyan-500/20 bg-slate-900/95 p-4 shadow-2xl backdrop-blur">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">Global Cross-Market Terminal</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-cyan-400">US Market Terminal</p>
                   <h2 className="text-xl font-semibold text-slate-100">{formatSelectedDate(selectedDate)}</h2>
                   <p className="text-sm text-slate-400">Extraction target: <span className="font-semibold text-slate-200">{formatSelectedDateTime(selectedDate, selectedTime)}</span></p>
                   {marketStatus.closed && (
@@ -619,7 +612,6 @@ export default function App() {
                         })}
                       </div>
 
-                      {/* Requirement Fulfilled: Display metrics scaled to a 12-Hour interface system maps */}
                       <div className="border-t border-slate-800 pt-3 grid grid-cols-3 gap-2">
                         <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-1 text-center">
                           <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
@@ -658,37 +650,18 @@ export default function App() {
           <header className="border-b border-slate-800 pb-4 mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">ApexTrader Global</h1>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">ApexTrader US</h1>
                 <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${marketStatus.closed ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'}`}>{apiMode}</span>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Multi-Exchange Sandbox Environment supporting US, NSE, LSE, and TSE execution structures.</p>
+              <p className="text-xs text-slate-400 mt-1">Dedicated US Stock Market Sandbox Environment supporting NYSE and NASDAQ tracking.</p>
             </div>
             <div className="text-left sm:text-right">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Combined Global Net Worth</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total Net Worth</span>
               <div className="text-2xl md:text-3xl font-mono font-bold text-emerald-400">
                 ${netWorth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
           </header>
-        </section>
-
-        <section id="watchlist">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider px-2">Market Core Hubs:</span>
-            {['ALL', 'US', 'India', 'Europe', 'Asia'].map((exchange) => (
-              <button
-                key={exchange}
-                onClick={() => setSelectedExchangeFilter(exchange)}
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
-                  selectedExchangeFilter === exchange
-                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/20'
-                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
-                }`}
-              >
-                {exchange === 'ALL' ? '🌍 Global Universe' : exchange}
-              </button>
-            ))}
-          </div>
         </section>
 
         {/* METRICS METADATA ROW WITH CASH ENTRY FUNCTIONALITY */}
@@ -728,7 +701,7 @@ export default function App() {
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-4 space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Asset Watchlist & Ingestion Panel</h2>
+                <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Asset Watchlist Panel</h2>
                 
                 <form onSubmit={handleAddTicker} className="flex gap-2 w-full sm:w-auto">
                   <input
@@ -736,7 +709,7 @@ export default function App() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     disabled={marketStatus.closed}
-                    placeholder={marketStatus.closed ? "Market Closed" : "Add Ticker (e.g. INFY.NSE)"}
+                    placeholder={marketStatus.closed ? "Market Closed" : "Add Ticker (e.g. AMD)"}
                     className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono w-full sm:w-48 disabled:cursor-not-allowed disabled:bg-slate-900/40"
                   />
                   <button
@@ -750,7 +723,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filteredWatchlist.map((ticker) => {
+                {watchlist.map((ticker) => {
                   const stock = marketStocks[ticker] || BASELINE_STOCKS[ticker];
                   if (!stock || marketStatus.closed) {
                     return (
@@ -820,7 +793,7 @@ export default function App() {
                       Buy Order
                     </button>
                     <button 
-                      onClick={handleSell}
+                      onClick={handleSilentSell}
                       className="flex-1 sm:flex-none font-semibold bg-rose-600 hover:bg-rose-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
                     >
                       Sell Order
@@ -834,7 +807,7 @@ export default function App() {
               )}
             </div>
 
-            <section id="analytics" className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
+            <div id="portfolio-table" className="bg-slate-900 border border-slate-800/80 rounded-xl p-4">
               <h2 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Your Position Portfolio</h2>
               {portfolio.length === 0 ? (
                 <p className="text-sm text-slate-500 py-4 text-center">No active stock holdings found. Expand your watchlist to begin.</p>
@@ -871,14 +844,14 @@ export default function App() {
                   </table>
                 </div>
               )}
-            </section>
+            </div>
           </div>
 
-          <section id="settings" className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 min-h-[300px]">
+          <div className="space-y-6">
+            <section id="analytics" className="bg-slate-900 border border-slate-800/80 rounded-xl p-5 min-h-[300px]">
               <div className="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
                 <span className="text-purple-400">💡</span>
-                <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Cross-Market Diagnostics</h2>
+                <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Market Diagnostics</h2>
               </div>
 
               {autopsyReport ? (
@@ -896,12 +869,12 @@ export default function App() {
                 <div className="h-48 flex flex-col items-center justify-center text-center text-slate-500 text-xs p-4">
                   <p>{marketStatus.closed ? "Terminal System Offline" : "Telemetry Engine Online..."}</p>
                   <p className="text-slate-600 mt-2">
-                    {marketStatus.closed ? "Data ingestion pipelines are closed due to schedule limits. Adjust date settings above to simulate trading hours." : "Realized cross-market exits failing baseline profitability thresholds automatically execute analytical loss post-mortems here."}
+                    {marketStatus.closed ? "Data ingestion pipelines are closed due to schedule limits. Adjust date settings above to simulate trading hours." : "Realized US sector exits failing baseline profitability thresholds automatically execute analytical loss post-mortems here."}
                   </p>
                 </div>
               )}
-            </div>
-          </section>
+            </section>
+          </div>
         </div>
 
       </div>
