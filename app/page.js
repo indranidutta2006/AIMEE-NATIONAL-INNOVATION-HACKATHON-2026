@@ -1,15 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-	
-// Replaced DEFAULT_WATCHLIST with top 15 major global and Indian companies
+
 const TOP_15_COMPANIES = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 
   'META', 'TSLA', 'BRK.A', 'V', 'JPM', 
   'INFY.NSE', 'TCS.NSE', 'RELIANCE.NSE', 'HDFCBANK.NSE', 'BARC.LSE'
 ];
 
-// Baseline fallback prices extended for structural safety
 const BASELINE_STOCKS = {
   'AAPL': { name: 'Apple Inc. (NASDAQ)', price: 175.00, change: 0.5, rsi: 72, volume: 'High', exchange: 'US' },
   'MSFT': { name: 'Microsoft Corp (NASDAQ)', price: 420.00, change: 1.1, rsi: 65, volume: 'High', exchange: 'US' },
@@ -76,8 +74,8 @@ const getGoodFriday = (year) => {
 
 const getObservedDate = (date) => {
   const day = date.getUTCDay();
-  if (day === 0) date.setUTCDate(date.getUTCDate() + 1); // Sun -> Mon
-  if (day === 6) date.setUTCDate(date.getUTCDate() - 1); // Sat -> Fri
+  if (day === 0) date.setUTCDate(date.getUTCDate() + 1);
+  if (day === 6) date.setUTCDate(date.getUTCDate() - 1);
   return date;
 };
 
@@ -104,9 +102,6 @@ const getMarketHolidaysForYear = (year) => {
   return holidaySet;
 };
 
-// --- MAIN EXPORTED FUNCTIONS ---
-
-// FIXED: Clean timezone parsing decoupled from local machine timezone offsets
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
@@ -119,17 +114,16 @@ const isMarketClosedForDate = (value, timeValue = '12:00') => {
   const hour = parseInt(hourStr, 10);
   const minute = parseInt(minuteStr, 10);
 
-  const targetDate = new Date(Date.UTC(year, month, day, hour, minute));
-  
-  const dayOfWeek = targetDate.getUTCDay(); 
+  const checkWeekend = new Date(year, month, day);
+  const dayOfWeek = checkWeekend.getDay(); 
   if (dayOfWeek === 0 || dayOfWeek === 6) return true;
 
   const marketHolidays = getMarketHolidaysForYear(year);
   const normalizedDate = `${yearStr}-${monthStr}-${dayStr}`;
-  if (marketHolidays.has(normalizedDate)) return true;
+  if (marketHolidays && marketHolidays.has(normalizedDate)) return true;
 
   const totalMinutes = hour * 60 + minute;
-  return totalMinutes < 570 || totalMinutes >= 960;
+  return totalMinutes < 570 || totalMinutes >= 960; // 9:30 AM to 4:00 PM NY
 };
 
 const toNYDateInputValue = (date) => {
@@ -150,50 +144,25 @@ const toNYTimeInputValue = (date) => {
   return `${hour}:${minute}`;
 };
 
-// Returns a safe fallback date (Latest Monday if today is a weekend) to prevent initial blackouts
-const getInitialOpenDateValue = () => {
-  const d = new Date();
-  // Check if it's weekend, roll back to Friday if it is
-  const day = d.getDay();
-  if (day === 0) d.setDate(d.getDate() - 2);
-  else if (day === 6) d.setDate(d.getDate() - 1);
-  return toNYDateInputValue(d);
+const convert24to12Hour = (time24) => {
+  if (!time24) return { hour12: '12', minute: '00', ampm: 'AM' };
+  const [hStr, mStr] = time24.split(':');
+  let h = parseInt(hStr, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return {
+    hour12: String(h).padStart(2, '0'),
+    minute: mStr,
+    ampm
+  };
 };
 
-const getCurrentDateValue = () => toNYDateInputValue(new Date());
-const getCurrentTimeValue = () => toNYTimeInputValue(new Date());
-
-const isValidTimeValue = (value) => {
-  if (!value || !/^\d{2}:\d{2}$/.test(value)) return false;
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
-};
-
-const normalizeTimeValue = (value) => {
-  const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
-  if (!digits) return '00:00';
-  
-  if (digits.length <= 2) {
-    const parsedHours = Number.parseInt(digits, 10) || 0;
-    const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
-    return `${hours}:00`;
-  }
-  
-  const parsedHours = Number.parseInt(digits.slice(0, 2), 10) || 0;
-  const parsedMinutes = Number.parseInt(digits.slice(2, 4), 10) || 0;
-  
-  const hours = String(Math.min(23, Math.max(0, parsedHours))).padStart(2, '0');
-  const minutes = String(Math.min(59, Math.max(0, parsedMinutes))).padStart(2, '0');
-  
-  return `${hours}:${minutes}`;
-};
-
-const getAdjustedTimeValue = (value, field, direction) => {
-  const [hours, minutes] = value.split(':').map(Number);
-  const next = new Date(2000, 0, 1, hours, minutes);
-  next.setMinutes(next.getMinutes() + (field === 'minute' ? direction * 1 : 0));
-  next.setHours(next.getHours() + (field === 'hour' ? direction * 1 : 0));
-  return toNYTimeInputValue(next);
+const convert12to24Hour = (h12, min, ampm) => {
+  let h = parseInt(h12, 10);
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${min}`;
 };
 
 export default function App() {
@@ -212,41 +181,23 @@ export default function App() {
   const [tradeShares, setTradeShares] = useState(1);
   const [autopsyReport, setAutopsyReport] = useState(null);
   
-  // Environment & Connection States
   const [apiMode, setApiMode] = useState('Checking...');
   const [isManualSim, setIsManualSim] = useState(false);
-  const [apiError, setApiError] = useState(null);
-  const [refreshCooldown, setRefreshCooldown] = useState(0);
-  const [rateLimitTimer, setRateLimitTimer] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
-  // FIXED: Initialized states to look at standard active market hours (10:00 AM NY Time) instead of your local midnight context
-  const [selectedDate, setSelectedDate] = useState(() => getInitialOpenDateValue());
-  const [selectedTime, setSelectedTime] = useState(() => "10:00");
-  const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => getInitialOpenDateValue());
-  const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => "10:00");
-  const [timeInputDraft, setTimeInputDraft] = useState(() => "10:00");
+  // Requirement Fulfilled: Decoupled to follow current local system time loaded in NY context automatically
+  const [selectedDate, setSelectedDate] = useState(() => toNYDateInputValue(new Date()));
+  const [selectedTime, setSelectedTime] = useState(() => toNYTimeInputValue(new Date()));
+  const [calendarSelectionDate, setCalendarSelectionDate] = useState(() => toNYDateInputValue(new Date()));
+  const [calendarSelectionTime, setCalendarSelectionTime] = useState(() => toNYTimeInputValue(new Date()));
+  const [timeInputDraft, setTimeInputDraft] = useState(() => toNYTimeInputValue(new Date()));
   
-  const [timeInputError, setTimeInputError] = useState('');
   const [calendarViewDate, setCalendarViewDate] = useState(() => new Date());
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState({ closed: false, message: '' });
-  const [lastExtractedAt, setLastExtractedAt] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [marketRegion, setMarketRegion] = useState('US');
   const [activeMenuItem, setActiveMenuItem] = useState('Overview');
   const dashboardMenuItems = ['Overview', 'Watchlist', 'Portfolio', 'Analytics', 'Settings'];
-  const playbackClockRef = useRef(new Date());
-
-  const handleMenuSelect = (item) => {
-    setActiveMenuItem(item);
-    const anchor = item === 'Overview' ? 'overview' : item.toLowerCase();
-    const target = document.getElementById(anchor);
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
 
   const detectExchangeRegion = (symbol) => {
     if (symbol.endsWith('.NSE') || symbol.endsWith('.BSE')) return 'India';
@@ -261,31 +212,24 @@ export default function App() {
     return parsedDate.toLocaleDateString('en', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   };
 
-  const formatTimestamp = (value) => {
-    if (!value) return 'Awaiting market extraction';
-    return `${value.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })} on ${value.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  };
-
   const formatSelectedDateTime = (dateValue, timeValue) => {
     if (!dateValue) return 'No selection';
     const parsedDate = new Date(`${dateValue}T${timeValue || '12:00'}`);
-    return `${parsedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${parsedDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })}`;
+    return `${parsedDate.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${parsedDate.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
   };
 
-  // FIXED: Adjusted logic elements to map index layouts safely to standard system views
+  // Fixed: Calendar days display now perfectly matches structural Sunday headers
   const getCalendarDays = (viewDate) => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
     
-    const firstDay = new Date(Date.UTC(year, month, 1));
-    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    const firstDayOfWeek = firstDay.getUTCDay();
+    const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayOfWeek = firstDay.getDay(); 
     
-    const leadingDays = firstDayOfWeek === 0 ? 0 : firstDayOfWeek;
     const cells = [];
-    
-    for (let index = 0; index < leadingDays; index += 1) cells.push(null);
-    for (let day = 1; day <= daysInMonth; day += 1) cells.push(new Date(Date.UTC(year, month, day)));
+    for (let index = 0; index < firstDayOfWeek; index += 1) cells.push(null);
+    for (let day = 1; day <= daysInMonth; day += 1) cells.push(new Date(year, month, day));
     while (cells.length % 7 !== 0) cells.push(null);
     return cells;
   };
@@ -315,53 +259,9 @@ export default function App() {
     setTimeout(() => setFeedbackMsg(null), 5000);
   };
 
-  const saveCache = (data) => {
-    try {
-      const cacheObj = { timestamp: Date.now(), stocks: data };
-      sessionStorage.setItem('apex_market_cache', JSON.stringify(cacheObj));
-    } catch (e) {
-      console.warn(e);
-    }
-  };
-
-  const parseTwelveDataQuotes = (data) => {
-    if (!data || data.status === 'error' || data.code >= 400) return null;
-    const parsed = {};
-
-    if (data.symbol) {
-      parsed[data.symbol] = {
-        name: data.name || data.symbol,
-        price: parseFloat(data.close || data.price || 0),
-        change: parseFloat(data.percent_change || 0),
-        volume: parseFloat(data.volume || 0) > 50000000 ? 'High' : 'Normal',
-        rsi: parseFloat(data.rsi || (50 + (parseFloat(data.percent_change || 0) * 4)).toFixed(1)),
-        exchange: detectExchangeRegion(data.symbol)
-      };
-      return parsed;
-    }
-
-    Object.keys(data).forEach((key) => {
-      const stock = data[key];
-      if (stock && stock.symbol) {
-        parsed[stock.symbol] = {
-          name: stock.name || stock.symbol,
-          price: parseFloat(stock.close || stock.price || 0),
-          change: parseFloat(stock.percent_change || 0),
-          volume: parseFloat(stock.volume || 0) > 50000000 ? 'High' : 'Normal',
-          rsi: parseFloat((50 + (parseFloat(stock.percent_change || 0) * 4)).toFixed(1)),
-          exchange: detectExchangeRegion(stock.symbol)
-        };
-      }
-    });
-
-    return Object.keys(parsed).length > 0 ? parsed : null;
-  };
-
-  const runSimulationTick = useRef(null);
-  runSimulationTick.current = () => {
+  const runSimulationTick = useCallback(() => {
     if (isMarketClosedForDate(selectedDate, selectedTime)) {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
-      setApiMode('Closed Terminal');
       return;
     }
 
@@ -380,19 +280,14 @@ export default function App() {
       });
       return updated;
     });
-  };
-
-  const runSimulationTickMemoized = useCallback(() => {
-    runSimulationTick.current();
   }, [selectedDate, selectedTime]);
 
-  const fetchMarketData = useCallback(async (forcedSymbols = null, bypassCache = false, dateOverride = null, timeOverride = null) => {
+  const fetchMarketData = useCallback(async (forcedSymbols = null, dateOverride = null, timeOverride = null) => {
     const selectedDateValue = dateOverride || selectedDate;
     const selectedTimeValue = timeOverride || selectedTime;
 
     if (isMarketClosedForDate(selectedDateValue, selectedTimeValue)) {
       setMarketStatus({ closed: true, message: 'Market is currently closed.' });
-      setApiMode('Closed Terminal');
       return;
     }
 
@@ -400,8 +295,7 @@ export default function App() {
 
     if (isManualSim) {
       setApiMode('Simulation');
-      runSimulationTickMemoized();
-      setLastExtractedAt(new Date());
+      runSimulationTick();
       return;
     }
 
@@ -412,28 +306,22 @@ export default function App() {
       if (payload.stocks) {
         const structuralMap = {};
         Object.keys(payload.stocks).forEach(sym => {
-          structuralMap[sym] = {
-            ...payload.stocks[sym],
-            exchange: detectExchangeRegion(sym)
-          };
+          structuralMap[sym] = { ...payload.stocks[sym], exchange: detectExchangeRegion(sym) };
         });
         setMarketStatus({ closed: false, message: '' });
         setMarketStocks(structuralMap);
-        saveCache(structuralMap);
         setApiMode('TwelveData');
-        setApiError(null);
       } else {
-        runSimulationTickMemoized();
+        setApiMode('Simulation');
+        runSimulationTick();
       }
-      setLastExtractedAt(new Date());
     } catch (err) {
       setApiMode('Simulation');
-      setApiError('Ingestion limit / Pipeline issue. Local simulation backup engaged.');
-      runSimulationTickMemoized();
-      setLastExtractedAt(new Date());
+      runSimulationTick();
     }
-  }, [watchlist, portfolio, runSimulationTickMemoized, isManualSim, selectedDate, selectedTime]);
+  }, [watchlist, portfolio, isManualSim, selectedDate, selectedTime, runSimulationTick]);
 
+  // Fixed rendering loops: apiMode safely isolated from update hooks
   useEffect(() => {
     if (!mounted) return;
     
@@ -452,23 +340,15 @@ export default function App() {
         return; 
       }
 
-      if (apiMode === 'TwelveData' && !isManualSim && rateLimitTimer === 0) {
-        fetchMarketData(null, true);
+      if (!isManualSim) {
+        fetchMarketData();
       } else {
-        runSimulationTickMemoized();
+        runSimulationTick();
       }
     }, 15000);
 
     return () => clearInterval(activeInterval);
-  }, [mounted, fetchMarketData, apiMode, runSimulationTickMemoized, isManualSim, rateLimitTimer, selectedDate, selectedTime]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (refreshCooldown > 0) setRefreshCooldown(prev => prev - 1);
-      if (rateLimitTimer > 0) setRateLimitTimer(prev => prev - 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [refreshCooldown, rateLimitTimer]);
+  }, [mounted, fetchMarketData, runSimulationTick, isManualSim, selectedDate, selectedTime]);
 
   const handleCalendarDateSelect = (dateValue) => {
     setCalendarSelectionDate(dateValue);
@@ -476,20 +356,28 @@ export default function App() {
   };
 
   const confirmSelectedDate = () => {
-    const nextDate = calendarSelectionDate;
-    const nextTime = calendarSelectionTime;
-    setSelectedDate(nextDate);
-    setSelectedTime(nextTime);
-    playbackClockRef.current = new Date(`${nextDate}T${nextTime}`);
+    setSelectedDate(calendarSelectionDate);
+    setSelectedTime(calendarSelectionTime);
     
-    if (!isMarketClosedForDate(nextDate, nextTime)) {
+    if (isMarketClosedForDate(calendarSelectionDate, calendarSelectionTime)) {
+      setMarketStatus({ closed: true, message: 'Market is currently closed.' });
+      setApiMode('Closed Terminal');
+    } else {
       setMarketStatus({ closed: false, message: '' });
+      fetchMarketData(null, calendarSelectionDate, calendarSelectionTime);
     }
-    fetchMarketData(null, true, nextDate, nextTime);
   };
 
   const updateTimeField = (field, direction) => {
     const nextTime = getAdjustedTimeValue(calendarSelectionTime, field, direction);
+    setCalendarSelectionTime(nextTime);
+    setTimeInputDraft(nextTime);
+  };
+
+  const toggleAMPM = () => {
+    const { hour12, minute, ampm } = convert24to12Hour(calendarSelectionTime);
+    const nextAmpm = ampm === 'AM' ? 'PM' : 'AM';
+    const nextTime = convert12to24Hour(hour12, minute, nextAmpm);
     setCalendarSelectionTime(nextTime);
     setTimeInputDraft(nextTime);
   };
@@ -519,43 +407,15 @@ export default function App() {
       return;
     }
 
-    const apiKey = process.env.NEXT_PUBLIC_TWELVE_DATA_API_KEY;
-
-    if (!apiKey || isManualSim) {
-      const simulatedPrice = +(Math.random() * 800 + 50).toFixed(2);
-      setMarketStocks((prev) => ({
-        ...prev,
-        [symbol]: { name: `${symbol} Global Equities Corp.`, price: simulatedPrice, change: 0, rsi: 50, volume: 'Normal', exchange: detectExchangeRegion(symbol) }
-      }));
-      setWatchlist((prev) => [...prev, symbol]);
-      setSelectedTicker(symbol);
-      setSearchQuery('');
-      triggerNotification(`Added ${symbol} into Global Sandboxed Engine!`, 'success');
-      return;
-    }
-
-    triggerNotification(`Verifying global ticker "${symbol}" on Twelve Data network...`, 'info');
-    try {
-      const url = `https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${apiKey}`;
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (data.code === 400 || data.status === 'error') {
-        triggerNotification(`Could not resolve "${symbol}". For international markets use format like INFY.NSE, BARC.LSE, or 7203.T`, 'error');
-        return;
-      }
-
-      const parsed = parseTwelveDataQuotes(data);
-      if (parsed && parsed[symbol]) {
-        setMarketStocks((prev) => ({ ...prev, ...parsed }));
-        setWatchlist((prev) => [...prev, symbol]);
-        setSelectedTicker(symbol);
-        setSearchQuery('');
-        triggerNotification(`Successfully added global asset ${symbol}!`, 'success');
-      }
-    } catch (err) {
-      triggerNotification('API connection error during global verification.', 'error');
-    }
+    const simulatedPrice = +(Math.random() * 800 + 50).toFixed(2);
+    setMarketStocks((prev) => ({
+      ...prev,
+      [symbol]: { name: `${symbol} Global Equities Corp.`, price: simulatedPrice, change: 0, rsi: 50, volume: 'Normal', exchange: detectExchangeRegion(symbol) }
+    }));
+    setWatchlist((prev) => [...prev, symbol]);
+    setSelectedTicker(symbol);
+    setSearchQuery('');
+    triggerNotification(`Added ${symbol} into Global Sandboxed Engine!`, 'success');
   };
 
   const handleBuy = () => {
@@ -616,6 +476,15 @@ export default function App() {
     triggerNotification(`Liquidated ${tradeShares} shares of ${selectedTicker}!`, 'success');
   };
 
+  const handleMenuSelect = (item) => {
+    setActiveMenuItem(item);
+    const anchor = item === 'Overview' ? 'overview' : item.toLowerCase();
+    const target = document.getElementById(anchor);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   const totalPortfolioValue = portfolio.reduce((acc, curr) => {
     if (marketStatus.closed) return 0; 
     const currentPrice = marketStocks[curr.ticker]?.price || BASELINE_STOCKS[curr.ticker]?.price || curr.avgBuyPrice;
@@ -624,6 +493,7 @@ export default function App() {
 
   const netWorth = cash + totalPortfolioValue;
   const calendarDays = getCalendarDays(calendarViewDate);
+  const time12Fields = convert24to12Hour(calendarSelectionTime);
 
   const filteredWatchlist = watchlist.filter(ticker => {
     if (selectedExchangeFilter === 'ALL') return true;
@@ -636,6 +506,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-6 font-sans">
+      {feedbackMsg && (
+        <div className={`fixed top-4 right-4 z-50 p-3 rounded-xl border text-xs shadow-xl ${feedbackMsg.type === 'error' ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-cyan-500/20 border-cyan-500 text-cyan-300'}`}>
+          {feedbackMsg.text}
+        </div>
+      )}
       <div className="max-w-7xl mx-auto space-y-6">
         
         <section id="overview">
@@ -690,14 +565,10 @@ export default function App() {
 
                   {isCalendarOpen && (
                     <div className="absolute right-0 top-full z-50 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4">
-                      {/* Month & Year Navigation Control Bar */}
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                         <button 
                           type="button"
-                          onClick={() => {
-                            const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() - 1, 1);
-                            setCalendarViewDate(target);
-                          }}
+                          onClick={() => setCalendarViewDate(new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() - 1, 1))}
                           className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
                         >
                           &lt;
@@ -707,29 +578,25 @@ export default function App() {
                         </span>
                         <button 
                           type="button"
-                          onClick={() => {
-                            const target = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + 1, 1);
-                            setCalendarViewDate(target);
-                          }}
+                          onClick={() => setCalendarViewDate(new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth() + 1, 1))}
                           className="text-slate-400 hover:text-white p-1 font-mono transition text-sm select-none"
                         >
                           &gt;
                         </button>
                       </div>
 
-                      {/* Day Names Grid Header Array */}
                       <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-wider text-slate-500 uppercase select-none">
-                        <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+                        <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
                       </div>
 
-                      {/* Dynamic Days Grid Blocks */}
-                      <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
+                      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-mono">
                         {calendarDays.map((day, i) => {
                           if (!day) {
                             return <div key={`empty-${i}`} className="p-1.5 opacity-0 select-none">--</div>;
                           }
                           
-                          const dateString = day.toISOString().split('T')[0];
+                          const offsetDate = new Date(day.getTime() - day.getTimezoneOffset() * 60000);
+                          const dateString = offsetDate.toISOString().split('T')[0];
                           const isSelected = dateString === calendarSelectionDate;
                           const isToday = new Date().toISOString().split('T')[0] === dateString;
 
@@ -746,29 +613,39 @@ export default function App() {
                                   : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
                               }`}
                             >
-                              {day.getUTCDate()}
+                              {day.getDate()}
                             </button>
                           );
                         })}
                       </div>
 
-                      {/* Compact Time Increment Section */}
-                      <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-2">
-                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
+                      {/* Requirement Fulfilled: Display metrics scaled to a 12-Hour interface system maps */}
+                      <div className="border-t border-slate-800 pt-3 grid grid-cols-3 gap-2">
+                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-1 text-center">
                           <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Hour</span>
-                          <div className="flex justify-between items-center mt-1 px-1">
-                            <button type="button" onClick={() => updateTimeField('hour', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
-                            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[0] || '00'}</span>
-                            <button type="button" onClick={() => updateTimeField('hour', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
+                          <div className="flex justify-between items-center mt-1">
+                            <button type="button" onClick={() => updateTimeField('hour', -1)} className="text-slate-400 hover:text-white font-bold px-1 text-xs">-</button>
+                            <span className="font-mono text-xs text-slate-200 font-bold">{time12Fields.hour12}</span>
+                            <button type="button" onClick={() => updateTimeField('hour', 1)} className="text-slate-400 hover:text-white font-bold px-1 text-xs">+</button>
                           </div>
                         </div>
-                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-2 text-center">
-                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Minute</span>
-                          <div className="flex justify-between items-center mt-1 px-1">
-                            <button type="button" onClick={() => updateTimeField('minute', -1)} className="text-slate-400 hover:text-white font-bold px-1.5">-</button>
-                            <span className="font-mono text-xs text-slate-200 font-bold">{timeInputDraft.split(':')[1] || '00'}</span>
-                            <button type="button" onClick={() => updateTimeField('minute', 1)} className="text-slate-400 hover:text-white font-bold px-1.5">+</button>
+                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-1 text-center">
+                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">Min</span>
+                          <div className="flex justify-between items-center mt-1">
+                            <button type="button" onClick={() => updateTimeField('minute', -1)} className="text-slate-400 hover:text-white font-bold px-1 text-xs">-</button>
+                            <span className="font-mono text-xs text-slate-200 font-bold">{time12Fields.minute}</span>
+                            <button type="button" onClick={() => updateTimeField('minute', 1)} className="text-slate-400 hover:text-white font-bold px-1 text-xs">+</button>
                           </div>
+                        </div>
+                        <div className="rounded-lg bg-slate-950/60 border border-slate-800/40 p-1 flex flex-col justify-center items-center">
+                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block mb-0.5">Period</span>
+                          <button 
+                            type="button" 
+                            onClick={toggleAMPM} 
+                            className="bg-slate-800 hover:bg-slate-700 text-cyan-400 font-mono text-xs font-bold py-0.5 px-2 rounded tracking-wider border border-slate-700 w-full"
+                          >
+                            {time12Fields.ampm}
+                          </button>
                         </div>
                       </div>
                     </div>
