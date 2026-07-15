@@ -793,7 +793,7 @@ export default function App() {
                       Buy Order
                     </button>
                     <button 
-                      onClick={handleSilentSell}
+                      onClick={handleSell}
                       className="flex-1 sm:flex-none font-semibold bg-rose-600 hover:bg-rose-500 text-white px-6 py-2 rounded-lg transition text-sm text-center"
                     >
                       Sell Order
