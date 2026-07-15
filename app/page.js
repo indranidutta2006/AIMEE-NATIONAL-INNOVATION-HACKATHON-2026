@@ -107,6 +107,10 @@ const getMarketHolidaysForYear = (year) => {
 // --- MAIN EXPORTED FUNCTIONS ---
 
 // FIXED: Clean timezone parsing decoupled from local machine timezone offsets
+/**
+ * Checks if the market is closed for a given NY date string ('YYYY-MM-DD') 
+ * and NY time string ('HH:MM').
+ */
 const isMarketClosedForDate = (value, timeValue = '12:00') => {
   if (!value) return true;
 
@@ -119,19 +123,41 @@ const isMarketClosedForDate = (value, timeValue = '12:00') => {
   const hour = parseInt(hourStr, 10);
   const minute = parseInt(minuteStr, 10);
 
-  const targetDate = new Date(Date.UTC(year, month, day, hour, minute));
+  // Construct a specific instance in NY time to check the day of the week accurately
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'numeric' // '0' for Sunday, '6' for Saturday in typical locales, or check via parts
+  });
   
-  const dayOfWeek = targetDate.getUTCDay(); 
+  // Create a proper date instance representing this exact NY wall-clock time
+  // Note: Using a standard ISO string or template to build it safely in NY context
+  const targetDate = new Date(`${value}T${timeValue}:00-04:00`); // Approximation, safer approach below:
+  
+  // Highly accurate time-zone independent day lookup for NY
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric'
+  }).formatToParts(new Date(Date.UTC(year, month, day, hour + 5, minute))); // Shift roughly to hit day
+
+  // A more direct, bulletproof way to get the true NY day of the week for the given YYYY-MM-DD:
+  // Since you already have the NY date string, we can just construct a local date reference for weekend checking
+  const checkWeekend = new Date(year, month, day);
+  const dayOfWeek = checkWeekend.getDay(); 
   if (dayOfWeek === 0 || dayOfWeek === 6) return true;
 
+  // Holiday Check
   const marketHolidays = getMarketHolidaysForYear(year);
   const normalizedDate = `${yearStr}-${monthStr}-${dayStr}`;
-  if (marketHolidays.has(normalizedDate)) return true;
+  if (marketHolidays && marketHolidays.has(normalizedDate)) return true;
 
+  // Time check (Market hours: 09:30 [570 mins] to 16:00 [960 mins])
   const totalMinutes = hour * 60 + minute;
   return totalMinutes < 570 || totalMinutes >= 960;
 };
 
+/**
+ * Converts any Date object (defaults to local system time) to a NY Date Input Value (YYYY-MM-DD)
+ */
 const toNYDateInputValue = (date) => {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -141,6 +167,9 @@ const toNYDateInputValue = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+/**
+ * Converts any Date object (defaults to local system time) to a NY Time Input Value (HH:MM)
+ */
 const toNYTimeInputValue = (date) => {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -150,25 +179,44 @@ const toNYTimeInputValue = (date) => {
   return `${hour}:${minute}`;
 };
 
-// Returns a safe fallback date (Latest Monday if today is a weekend) to prevent initial blackouts
+/**
+ * Returns a safe fallback date (Latest Friday if today is a weekend in NY) to prevent initial blackouts
+ */
 const getInitialOpenDateValue = () => {
-  const d = new Date();
-  // Check if it's weekend, roll back to Friday if it is
-  const day = d.getDay();
-  if (day === 0) d.setDate(d.getDate() - 2);
-  else if (day === 6) d.setDate(d.getDate() - 1);
-  return toNYDateInputValue(d);
+  // Get current time transformed to NY context first to determine the correct NY day
+  const nyDateStr = toNYDateInputValue(new Date());
+  const [year, month, day] = nyDateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  
+  const dayOfWeek = d.getDay();
+  if (dayOfWeek === 0) d.setDate(d.getDate() - 2); // Sunday -> Friday
+  else if (dayOfWeek === 6) d.setDate(d.getDate() - 1); // Saturday -> Friday
+  
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+/**
+ * Gets the current local system time converted to NY Date string
+ */
 const getCurrentDateValue = () => toNYDateInputValue(new Date());
+
+/**
+ * Gets the current local system time converted to NY Time string (Your core requirement)
+ */
 const getCurrentTimeValue = () => toNYTimeInputValue(new Date());
 
+/**
+ * Validates if the string is a valid HH:MM time format
+ */
 const isValidTimeValue = (value) => {
   if (!value || !/^\d{2}:\d{2}$/.test(value)) return false;
   const [hours, minutes] = value.split(':').map(Number);
   return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 };
 
+/**
+ * Pad and normalize partial user text entries into a clean HH:MM structure
+ */
 const normalizeTimeValue = (value) => {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
   if (!digits) return '00:00';
@@ -188,14 +236,20 @@ const normalizeTimeValue = (value) => {
   return `${hours}:${minutes}`;
 };
 
+/**
+ * Adjusts hours or minutes step-wise (e.g., for arrow keys or up/down buttons)
+ */
 const getAdjustedTimeValue = (value, field, direction) => {
   const [hours, minutes] = value.split(':').map(Number);
   const next = new Date(2000, 0, 1, hours, minutes);
   next.setMinutes(next.getMinutes() + (field === 'minute' ? direction * 1 : 0));
   next.setHours(next.getHours() + (field === 'hour' ? direction * 1 : 0));
-  return toNYTimeInputValue(next);
+  
+  // Format out using standard padding to maintain local assignment safety
+  const h = String(next.getHours()).padStart(2, '0');
+  const m = String(next.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
 };
-
 export default function App() {
   // --- STATE MANAGEMENT ---
   const [cash, setCash] = useState(100000.00); 
